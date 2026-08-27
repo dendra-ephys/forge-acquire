@@ -1,9 +1,9 @@
 {
   "schema": "dendra.private_product_repository.v1",
   "product": "host_app",
-  "repository": "0794xiaobaozi/dendra-software-host-app",
+  "repository": "dendra-ephys/dendra-software-host-app",
   "visibility_required": "PRIVATE",
-  "source_repository": "0794xiaobaozi/dendra-forge",
+  "source_repository": "dendra-ephys/dendra-forge",
   "source_head": "4b30856dfe11bbc1e3c0dcb1a6e6b0d2255534e4",
   "source_worktree_dirty": true,
   "exported_at_utc": "2026-08-27T12:44:10.028859+00:00",

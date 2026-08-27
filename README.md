@@ -1,6 +1,6 @@
 # Dendra Forge Host Application
 
-Private product repository exported from `0794xiaobaozi/dendra-forge`.
+Private product repository exported from `dendra-ephys/dendra-forge`.
 
 Host acquisition, recording, replay and analysis software product.
 

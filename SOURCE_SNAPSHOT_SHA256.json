@@ -97,8 +97,8 @@
     },
     {
       "path": "product_manifest.json",
-      "bytes": 458,
-      "sha256": "4AFA6CF33580E80E59CE1AF8E7C69B6DC498A5814016BFC63AF056DD596AD4F1"
+      "bytes": 454,
+      "sha256": "74221BC5577F60F18CB17FDCAA9EACCECC9F80CACFA3E81631B1A6FF844C41DB"
     },
     {
       "path": "protocol/.gitignore",
@@ -397,8 +397,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 703,
-      "sha256": "9308387CFA5BFD78C93DF4A6956CB35B9BC486C84480EDE2E195A33F5367FD12"
+      "bytes": 701,
+      "sha256": "F1E9127931CE156B7A162DCCFDB7F875F3ACB4B39AA81C50C4136CB00CBCF777"
     },
     {
       "path": "recording-daemon/.gitignore",
