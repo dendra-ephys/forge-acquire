@@ -1,0 +1,45 @@
+# Forge NWB publication receipt v1
+# Canonical text: UTF-8, LF newlines, final LF required.
+# Byte order: little-endian. Exact encoded length: 352 bytes.
+
+magic[8] = "FGRPUB01"
+version:u16 = 1
+encoded_length:u16 = 352
+publication_flags:u32
+run_id:u8[16]
+generation:u32
+reserved0:u32 = 0
+published_at_unix_ns:u64
+nwb_bytes:u64
+validation_sequence:u64
+host_protocol_hash:u8[32]
+validation_receipt_contract_hash:u8[32]
+validation_receipt_sha256:u8[32]
+nwb_sha256:u8[32]
+final_path_sha256:u8[32]
+publication_contract_hash:u8[32]
+owner_validation_evidence_sha256:u8[32]
+reserved1:u8[28] = 0
+crc32c:u32
+
+publication_flags:
+  OWNER_VALIDATION_VERIFIED = 0x00000001
+  FINAL_LINK_CREATED = 0x00000002
+  FINAL_FILE_SYNCED = 0x00000004
+
+invariants:
+  - publication_flags is exactly 0x00000007
+  - run_id is nonzero
+  - generation is positive
+  - published_at_unix_ns is nonzero
+  - nwb_bytes is nonzero
+  - validation_sequence is positive
+  - every hash is nonzero
+  - host_protocol_hash equals forge_protocol_v1 PROTOCOL_HASH
+  - validation_receipt_contract_hash equals NwbGenerationValidationReceiptV1 contract hash
+  - publication_contract_hash equals the LF-normalized SHA-256 of this file
+  - final_path_sha256 hashes the absolute final-path UTF-8 bytes exactly as persisted by the owner
+  - owner_validation_evidence_sha256 hashes "FGRNWBOWNER1" || validation_receipt_sha256 || nwb_sha256 || final_path_sha256
+  - reserved bytes are zero
+  - crc32c covers bytes 0..347
+  - this receipt never authorizes journal deletion; retention/backup is separate

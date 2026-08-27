@@ -1,0 +1,73 @@
+namespace forge.service.v1;
+
+// Owner: forge-acqd. This is the authenticated local-service response, not a
+// Receiver-Pod/FT601 or Aggregator wire format. Request bytes are always one
+// complete M0 forge_protocol_v1 low-speed message.
+//
+// The response is exactly 400 bytes, little-endian, with CRC32C over bytes
+// 0..395. IDs are all-zero only when the corresponding status field is absent.
+// Optional u64 watermarks use UINT64_MAX when absent.
+
+const RESPONSE_MAGIC: bytes[8] = "FGSVR001";
+const RESPONSE_SIZE: u16 = 400;
+typedef u64 u64_optional; // UINT64_MAX means absent; every other value is literal.
+
+enum ServiceStateV1 : u16 {
+  NEW = 0; PREPARED = 1; ARMED = 2; RECORDING = 3; STOPPED = 4;
+  FINALIZED = 5; ABORTED = 6; FAILED = 7; JOURNAL_SEALED = 8;
+}
+
+flags ServiceResponseFlagsV1 : u32 {
+  ACCEPTED = 0x00000001;
+  RETRYABLE = 0x00000002;
+  POISONED = 0x00000004;
+  AUTO_FAILED_ON_RESTART = 0x00000008;
+  HARDWARE_TRANSPORT_AVAILABLE = 0x00000010;
+  AUTHENTICATED_PIPE = 0x00000020;
+  SCM_OWNED = 0x00000040;
+  PROTECTED_REPLAY_AVAILABLE = 0x00000080;
+}
+
+enum ServiceErrorV1 : u32 {
+  NONE = 0;
+  MALFORMED_REQUEST = 1;
+  UNSUPPORTED_MESSAGE = 2;
+  HARDWARE_UNAVAILABLE = 3;
+  RUN_COMMAND_REJECTED = 4;
+  PERSISTENCE_FAILURE = 5;
+  INTERNAL_FAILURE = 6;
+}
+
+struct DaemonResponseV1 @size(400) {
+  0 total_len: u32 = 400;
+  4 magic: bytes[8] = RESPONSE_MAGIC;
+  12 version: u16 = 1;
+  14 response_len: u16 = 400;
+  16 state: ServiceStateV1;
+  18 reserved0: u16 = 0;
+  20 flags: ServiceResponseFlagsV1;
+  24 request_id: u64;
+  32 epoch: u64;
+  40 ledger_events: u64;
+  48 active_run_id: bytes[16];
+  64 latest_published_run_id: bytes[16];
+  80 receipt_hash: bytes[32];
+  112 host_protocol_hash: bytes[32];
+  144 service_contract_hash: bytes[32];
+  176 error: ServiceErrorV1;
+  180 reason_len: u16;
+  182 reserved1: u16 = 0;
+  184 committed_record_count: u64_optional;
+  192 durable_record_count: u64_optional;
+  200 expected_last_journal_sequence: u64_optional;
+  208 queue_used_slots: u64_optional;
+  216 queue_capacity_slots: u64_optional;
+  224 generated_record_count: u64_optional;
+  232 active_epoch: u64_optional;
+  240 highest_epoch: u64;
+  248 active_target_device_id: bytes[16];
+  264 active_frozen_config_hash: bytes[32];
+  296 latest_sealed_run_id: bytes[16];
+  312 reason_utf8: bytes[84];
+  396 crc32c: u32;
+}

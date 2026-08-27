@@ -1,0 +1,71 @@
+forge_direct_pod_replay_boundary ForgeDirectPodReplayBoundaryV1 {
+  byte_order = little_endian;
+  version = 1;
+  checksum = crc32c_castagnoli;
+  contract_hash = sha256(utf8_lf(this_file));
+  parent_protocol_hash = forge_protocol_v1.contract_hash;
+
+  // This companion binds the parent ReplayRequestV1 to one already-admitted
+  // direct-Pod Run and to the journal's exact next per-Pod record sequence.
+  // ReplayRequestV1.request_context_hash is SHA-256 of these exact 280 bytes.
+  struct DirectPodReplayRequestContextV1 @size(280) {
+    0 magic: bytes[8] = "FGRRCTX1";
+    8 version: u16 = 1; 10 body_len: u16 = 280;
+    12 reserved0: u32 = 0;
+    16 contract_hash: bytes[32] = sha256(utf8_lf(this_file));
+    48 parent_protocol_hash: bytes[32];
+    80 run_id: bytes[16]; 96 device_id: bytes[16];
+    112 pod_id: bytes[16]; 128 headstage_id: bytes[16];
+    144 transport_epoch: u64; 152 replay_request_id: u64;
+    160 first_record_sequence: u64;
+    168 last_record_sequence_exclusive: u64;
+    // u64::MAX means there was no prior record and first_record_sequence is 0.
+    176 prior_record_sequence_or_max: u64;
+    184 deadline_global_time_ns: u64;
+    192 reason_code: u16;
+    194 expected_ack_state_code: u16 = 3; // RECORDING
+    196 admission_receipt_file_sha256: bytes[32];
+    228 frozen_config_hash: bytes[32];
+    260 max_replayed_encoded_bytes: u64 = 268435456;
+    268 reserved1: bytes[8] = zero;
+    276 crc32c: u32 = crc32c(bytes[0..276]);
+  }
+
+  // The Pod emits the requested canonical records, with REPLAYED set, before
+  // its matching AckV1 on the same ordered IN stream. Both peers update the
+  // rolling hash as:
+  //   H0 = sha256(DirectPodReplayRequestContextV1 bytes)
+  //   Hn = sha256("FGRRREC1" || H(n-1) || sha256(encoded canonical record))
+  // The host validates each record before append, appends it, checks the exact
+  // append receipt, completes a journal durability barrier, and only then may
+  // accept the AckV1 receipt hash below.
+  struct DirectPodReplayCompletionV1 @size(296) {
+    0 magic: bytes[8] = "FGRRCMP1";
+    8 version: u16 = 1; 10 body_len: u16 = 296;
+    12 reserved0: u32 = 0;
+    16 contract_hash: bytes[32] = sha256(utf8_lf(this_file));
+    48 request_context_hash: bytes[32];
+    80 run_id: bytes[16]; 96 device_id: bytes[16];
+    112 pod_id: bytes[16]; 128 headstage_id: bytes[16];
+    144 transport_epoch: u64; 152 replay_request_id: u64;
+    160 first_record_sequence: u64;
+    168 last_record_sequence_exclusive: u64;
+    176 replayed_record_count: u64;
+    184 last_record_sequence: u64;
+    192 last_frame_end_exclusive: u64;
+    200 last_sample_end_exclusive: u64;
+    208 last_global_time_end_exclusive_ns: u64;
+    216 rolling_record_hash: bytes[32];
+    248 parent_protocol_hash: bytes[32];
+    280 replayed_encoded_bytes: u64;
+    288 reserved1: u32 = 0;
+    292 crc32c: u32 = crc32c(bytes[0..292]);
+  }
+
+  // Successful Replay acknowledgement:
+  // AckV1.ack_code = 1 (APPLIED), AckV1.state_code = 3 (RECORDING), and
+  // AckV1.receipt_hash = sha256(DirectPodReplayCompletionV1 bytes).
+  // A Nack is valid only before any requested replay record has been emitted.
+  // The first release bounds one request to at most 65536 records and 256 MiB
+  // of encoded canonical records, whichever is reached first.
+}

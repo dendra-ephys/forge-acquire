@@ -1,0 +1,32 @@
+# Build and tool caches
+**/target/
+**/target-*/
+**/node_modules/
+**/.pixi/
+**/.venv/
+**/venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/sim_build*/
+**/build/
+**/dist/
+**/coverage/
+*.pyc
+*.pdb
+*.rlib
+*.rmeta
+*.vcd
+*.fst
+*.log
+*.tmp
+*.bak
+~*
+*.lck
+
+# Local credentials
+.env
+.env.*
+api.txt
+*token*
+*credential*

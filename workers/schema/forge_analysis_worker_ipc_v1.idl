@@ -1,0 +1,78 @@
+ForgeAnalysisWorkerIpcV1
+========================
+
+Status: frozen host-internal companion transport
+Version: 1
+Byte order: little-endian
+Request bytes: 256
+Response bytes: 384
+
+This companion is carried only by a local protected worker named pipe whose
+server verifies the client's Windows TokenUser SID before parsing the body. It
+registers one observer-only ForgeAnalysisRingV1 mapping. It does not grant a
+WorkerTokenLeaseV1, stimulation authority, device access, or a raw WebView
+channel. Controller-input registration requires a future separately qualified
+SafetyArbiter coupling and is rejected by version 1.
+
+AnalysisWorkerRegisterRequestV1
+-------------------------------
+
+offset  size  field
+0       4     total_len = 256
+4       8     magic = ASCII FGANRQ01
+12      2     version = 1
+14      2     header_len = 256
+16      2     operation = 1 (REGISTER_OBSERVER)
+18      2     branch_role = 1 (OBSERVER)
+20      8     request_id, nonzero and idempotent within producer_epoch
+28      8     producer_epoch, nonzero and fresh for a new mapping
+36      16    run_id, nonzero
+52      16    consumer_id, nonzero and unique within the Run
+68      32    worker_build_hash, nonzero
+100     4     slot_count, range 2..65536
+104     4     slot_payload_capacity_bytes, range 176..1048752
+108     32    forge_protocol_hash
+140     32    forge_analysis_ring_schema_hash
+172     80    reserved_zero
+252     4     CRC32C over bytes [0,252)
+
+AnalysisWorkerRegisterResponseV1
+--------------------------------
+
+offset  size  field
+0       4     total_len = 384
+4       8     magic = ASCII FGANRS01
+12      2     version = 1
+14      2     header_len = 384
+16      2     result: 1 ACCEPTED, 2 REJECTED
+18      2     error: 0 NONE, 1 INVALID, 2 UNAVAILABLE, 3 CONFLICT, 4 INTERNAL
+20      8     request_id
+28      8     producer_epoch
+36      16    run_id
+52      16    consumer_id
+68      2     mapping_name_ascii_len, 1..128 when accepted; zero when rejected
+70      2     reserved_zero
+72      128   mapping_name_ascii, zero-padded; accepted prefix is
+               `Local\\ForgeAnalysisRing-`
+200     4     slot_count; zero when rejected
+204     4     slot_payload_capacity_bytes; zero when rejected
+208     8     slot_stride_bytes; zero when rejected
+216     8     total_mapping_bytes; zero when rejected
+224     32    forge_protocol_hash
+256     32    forge_analysis_ring_schema_hash
+288     32    SHA-256 of the exact 256-byte request
+320     32    worker_build_hash
+352     4     flags: bit0 LIVE_MAPPING; bit1 OBSERVER_ONLY; other bits zero
+356     24    reserved_zero
+380     4     CRC32C over bytes [0,380)
+
+Idempotence and lifecycle
+-------------------------
+
+An exact retry of `(producer_epoch, request_id)` returns the same response and
+mapping identity. Reuse with different request bytes is CONFLICT. Registration
+is accepted only before Run Prepare, and the mapping is never resumed after a
+worker or daemon restart. Every restart uses a fresh producer_epoch. The daemon
+publishes a SampleBlock to this disposable branch only after the canonical
+record has been admitted to the journal. Ring full drops the newest analysis
+copy, latches the branch fault, and never blocks acquisition or journal seal.

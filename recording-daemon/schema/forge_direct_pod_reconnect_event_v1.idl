@@ -1,0 +1,60 @@
+schema ForgeDirectPodReconnectEventV1
+status frozen direct-Pod fresh-epoch reconnect evidence
+endianness little
+contract_hash sha256(utf8_lf(this_file))
+
+struct DirectPodReconnectEventV1 @size(272) {
+  0 magic: bytes[8] = "FGRRCN01";
+  8 version: u16 = 1;
+  10 total_len: u16 = 272;
+  12 event_kind: u16;
+  14 flags: u16 = 0;
+  16 contract_hash: bytes[32];
+  48 device_id: bytes[16];
+  64 reconnect_sequence: u64;
+  72 previous_transport_epoch: u64;
+  80 candidate_transport_epoch: u64;
+  88 host_monotonic_ns: u64;
+  96 attempt_number: u32;
+  100 max_attempts: u32;
+  104 fault_kind: u16;
+  106 result_code: u16;
+  108 reserved: u32 = 0;
+  112 prior_event_hash: bytes[32];
+  144 deployment_evidence_hash: bytes[32];
+  176 detail_hash: bytes[32];
+  208 parent_protocol_hash: bytes[32];
+  240 service_instance_id: bytes[16];
+  256 reserved2: bytes[12] = 0;
+  268 crc32c: u32 over bytes[0..268];
+}
+
+event_kind:
+  1 TRANSPORT_FAULT
+  2 ATTEMPT_STARTED
+  3 ATTEMPT_FAILED
+  4 FRESH_EPOCH_ADMITTED
+  5 ATTEMPTS_EXHAUSTED
+  6 SERVICE_CANCELLED
+
+invariants:
+  flags and reserved fields are zero
+  device_id, service_instance_id, reconnect_sequence, host_monotonic_ns, max_attempts, deployment_evidence_hash and detail_hash are nonzero
+  host_monotonic_ns is compared only within one service_instance_id
+  reconnect_sequence is exactly one greater than the preceding event sequence
+  prior_event_hash is zero only for the first event and otherwise equals sha256(the exact preceding event)
+  max_attempts is constant for the lifetime of one reconnect ledger; production uses eight attempts
+  an interrupted ATTEMPT_STARTED is durably converted to ATTEMPT_FAILED on the next service instance and still consumes its attempt number
+  ATTEMPTS_EXHAUSTED is durable and cannot be cleared by restarting the service
+  TRANSPORT_FAULT has attempt_number zero, candidate_transport_epoch zero, nonzero fault_kind and zero result_code
+  ATTEMPT_STARTED has attempt_number in 1..max_attempts, candidate_transport_epoch zero and zero fault_kind/result_code
+  ATTEMPT_FAILED has attempt_number in 1..max_attempts, candidate_transport_epoch zero and nonzero fault_kind and result_code
+  FRESH_EPOCH_ADMITTED has attempt_number in 1..max_attempts, zero fault_kind/result_code and candidate_transport_epoch greater than previous_transport_epoch
+  ATTEMPTS_EXHAUSTED has attempt_number equal to max_attempts, candidate_transport_epoch zero and nonzero fault_kind/result_code
+  SERVICE_CANCELLED has attempt_number at most max_attempts, candidate_transport_epoch zero and zero fault_kind/result_code
+  parent_protocol_hash equals the frozen M0 protocol hash
+  a reconnect attempt may begin only after the old transport is cancelled and any unfinished Run is durably Failed
+  ATTEMPT_STARTED is durable before loading the D3XX DLL or opening a device; each open repeats admission-receipt wall-clock validity
+  a candidate must repeat exact policy, DLL, serial, configuration, descriptor and capability admission and provide a strictly newer Pod-originated epoch
+  a candidate that does not complete capability admission before the bounded owner deadline consumes one failed attempt
+  reconnect never resumes, appends to, seals or relabels the old Run

@@ -1,0 +1,83 @@
+schema ForgeHardwareServiceV1
+status frozen local operator-to-daemon hardware companion
+endianness little
+contract_hash sha256(utf8_lf(this_file))
+
+struct HardwareStatusRequestV1 @size(64) {
+  0 total_len32: u32 = 64;
+  4 magic: bytes[8] = "FGRHSQ01";
+  12 version: u16 = 1;
+  14 total_len16: u16 = 64;
+  16 contract_hash: bytes[32];
+  48 request_id: u64;
+  56 reserved: u32 = 0;
+  60 crc32c: u32 over bytes[0..60];
+}
+
+struct OperatorRunRequestV1 @size(176) {
+  0 total_len32: u32 = 176;
+  4 magic: bytes[8] = "FGRHRC01";
+  12 version: u16 = 1;
+  14 total_len16: u16 = 176;
+  16 contract_hash: bytes[32];
+  48 request_id: u64;
+  56 epoch: u64;
+  64 command: u16;
+  66 scope: u16 = 1;
+  68 relative_deadline_ms: u32;
+  72 run_id: bytes[16];
+  88 target_device_id: bytes[16];
+  104 frozen_config_hash: bytes[32];
+  136 expected_hardware_state_hash: bytes[32];
+  168 reserved: u32 = 0;
+  172 crc32c: u32 over bytes[0..172];
+}
+
+struct HardwareServiceSnapshotV1 @size(256) {
+  0 total_len32: u32 = 256;
+  4 magic: bytes[8] = "FGRHSV01";
+  12 version: u16 = 1;
+  14 total_len16: u16 = 256;
+  16 contract_hash: bytes[32];
+  48 request_id: u64;
+  56 service_state: u16;
+  58 error_code: u16;
+  60 availability_flags: u32;
+  64 device_id: bytes[16];
+  80 transport_epoch: u64;
+  88 status_sequence: u64;
+  96 hardware_time_ns: u64;
+  104 sample_counter: u64;
+  112 frame_counter: u64;
+  120 runtime_flags: u32;
+  124 reserved: u32 = 0;
+  128 hardware_state_hash: bytes[32];
+  160 active_run_id: bytes[16];
+  176 active_epoch: u64;
+  184 pending_request_id: u64;
+  192 first_journal_sequence: u64;
+  200 evidence_hash: bytes[32];
+  232 detail_code: u32;
+  236 reserved2: bytes[16] = zero;
+  252 crc32c: u32 over bytes[0..252];
+}
+
+OperatorRunRequestV1 invariants:
+  request_id, epoch, run_id, target_device_id, frozen_config_hash and expected_hardware_state_hash are nonzero
+  command is Prepare, Arm, Start, Stop or Abort
+  relative_deadline_ms is 100 through 5000 inclusive
+  expected_hardware_state_hash equals the latest fresh HardwareServiceSnapshotV1
+  daemon computes absolute deadline from that exact Pod snapshot; GUI never supplies or synthesizes hardware time
+
+HardwareServiceSnapshotV1 availability_flags:
+  bit0 ADMISSION_VERIFIED
+  bit1 TRANSPORT_OPEN
+  bit2 TIME_FRESH
+  bit3 HARDWARE_AVAILABLE
+  all other bits are zero
+
+HardwareServiceSnapshotV1 invariants:
+  HARDWARE_AVAILABLE implies ADMISSION_VERIFIED, TRANSPORT_OPEN and TIME_FRESH
+  an unavailable snapshot uses zero device/time/run fields and a nonzero error_code/evidence_hash
+  first_journal_sequence is u64::MAX when absent
+  no field changes the frozen 400-byte replay service response

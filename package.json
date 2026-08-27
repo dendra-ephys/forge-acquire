@@ -1,0 +1,36 @@
+{
+  "name": "forge-acquire",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "check:bundle": "node scripts/check-bundle-budget.mjs",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:protocol": "node scripts/check-protocol.mjs",
+    "test:data-plane": "cargo fmt --manifest-path recording-daemon/Cargo.toml -- --check && cargo test --locked --manifest-path recording-daemon/Cargo.toml --all-targets && cargo test --locked --manifest-path recording-daemon/Cargo.toml --all-targets --features qualification-harness && cargo clippy --locked --manifest-path recording-daemon/Cargo.toml --all-targets --all-features -- -D warnings",
+    "test:workers": "node scripts/check-workers.mjs",
+    "visual:qa": "node scripts/visual-qa.mjs",
+    "check": "npm run test && npm run build && npm run check:bundle && npm run test:protocol && npm run test:data-plane && npm run test:workers",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.8.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.0",
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "playwright-core": "^1.62.1",
+    "typescript": "~5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^3.0.5"
+  }
+}

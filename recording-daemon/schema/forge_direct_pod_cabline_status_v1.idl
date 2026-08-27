@@ -1,0 +1,69 @@
+schema ForgeDirectPodCablineStatusV1
+status frozen direct-Pod CABLINE source-status companion
+endianness little
+contract_hash sha256(utf8_lf(this_file))
+
+struct DirectPodCablineStatusV1 @size(360) {
+  0 magic: bytes[8] = "FGRCAB01";
+  8 version: u16 = 1;
+  10 total_len: u16 = 360;
+  12 header_flags: u32 = 0;
+  16 contract_hash: bytes[32];
+  48 device_id: bytes[16];
+  64 pod_id: bytes[16];
+  80 headstage_id: bytes[16];
+  96 transport_epoch: u64;
+  104 status_sequence: u64;
+  112 global_time_ns: u64;
+  120 headstage_boot_id: u64;
+  128 next_dhl_sequence: u64;
+  136 source_id: u32;
+  140 state_flags: u32;
+  144 symbol_error_count: u64;
+  152 crc_error_count: u64;
+  160 sequence_error_count: u64;
+  168 packet_drop_count: u64;
+  176 receiver_overflow_count: u64;
+  184 relock_count: u64;
+  192 headstage_config_hash: bytes[32];
+  224 descriptor_hash: bytes[32];
+  256 inventory_hash: bytes[32];
+  288 assembly_manifest_hash: bytes[32];
+  320 channel_map_hash: bytes[32];
+  352 reserved: u32 = 0;
+  356 crc32c: u32 over bytes[0..356];
+}
+
+state_flags:
+  bit0 LINK_LOCKED
+  bit1 DESCRIPTOR_ADMITTED
+  bit2 INVENTORY_ADMITTED
+  bit3 CTRL_READY
+  bit4 SOURCE_FAULT
+  bit5 RECEIVER_OVERFLOW
+  all other bits must be zero
+
+invariants:
+  contract_hash equals this LF-normalized schema SHA-256
+  device_id, pod_id, headstage_id and all five hashes are nonzero
+  transport_epoch, status_sequence, global_time_ns, headstage_boot_id, next_dhl_sequence and source_id are nonzero
+  LINK_LOCKED, DESCRIPTOR_ADMITTED, INVENTORY_ADMITTED and CTRL_READY are all required
+  SOURCE_FAULT and RECEIVER_OVERFLOW must both be false
+  all six error, drop, overflow and relock counters must be zero
+  identity, all hashes, headstage_boot_id and source_id never change within one transport epoch
+  status_sequence strictly increases within one transport epoch
+  global_time_ns, next_dhl_sequence and all counters never regress within one transport epoch
+  host monotonic receipt time may gate freshness only and is never source time
+  a status older than 100 milliseconds is not ready evidence
+
+host_policy_binding:
+  approved_cabline_binding_sha256 = sha256(
+    utf8("FORGE-DIRECT-POD-CABLINE-BINDING-V1") || u8(0) ||
+    contract_hash ||
+    headstage_config_hash || descriptor_hash || inventory_hash ||
+    assembly_manifest_hash || channel_map_hash)
+  headstage_config_hash equals the admitted Descriptor config_hash
+  descriptor_hash is SHA-256 of the exact admitted Descriptor payload
+  inventory_hash is SHA-256 of the exact admitted Inventory payload
+  assembly_manifest_hash and channel_map_hash equal the admitted Inventory fields
+  a protected deployment policy must approve this binding before Run artifacts or any Run OUT

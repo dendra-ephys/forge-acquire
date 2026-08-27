@@ -1,0 +1,36 @@
+// Forge Direct-Pod DHL identity evidence capsule v1.
+//
+// This is a host-local evidence transport schema only.  It is neither a
+// DeviceCapabilities message nor an authorization to enter Ready, start a Run,
+// open D3XX/FT601, or arm stimulation.  All multi-byte fields are little-endian.
+
+const u16 VERSION = 1;
+const u16 HEADER_LEN = 176;
+const u16 DESCRIPTOR_WIRE_LEN = 140;
+const u16 INVENTORY_WIRE_MIN_LEN = 152;
+const u16 INVENTORY_WIRE_MAX_LEN = 632;
+const u16 TOTAL_MIN_LEN = 472;
+const u16 TOTAL_MAX_LEN = 952;
+
+struct DirectPodDhlIdentityCapsuleV1 {
+    u8 magic[8];                    // "FGRDHI01"
+    u16 version;                    // VERSION
+    u16 total_len;                  // HEADER_LEN + descriptor_wire_len + inventory_wire_len + 4
+    u32 header_flags;               // zero
+    u8 contract_hash[32];           // SHA-256 of this exact LF-normalized IDL
+    u8 device_id[16];               // nonzero; protected caller context must match
+    u8 pod_id[16];                  // nonzero; protected caller context must match
+    u8 headstage_id[16];            // nonzero; protected caller context must match
+    u64 transport_epoch;            // nonzero; protected caller context must match
+    u16 descriptor_wire_len;        // DESCRIPTOR_WIRE_LEN
+    u16 inventory_wire_len;         // 152..632; exact DHL Inventory wire length
+    u32 reserved;                   // zero
+    u8 descriptor_wire_sha256[32];  // SHA-256 of complete DHL Descriptor packet
+    u8 inventory_wire_sha256[32];   // SHA-256 of complete DHL Inventory packet
+    u8 descriptor_wire[descriptor_wire_len];
+    u8 inventory_wire[inventory_wire_len];
+    u32 crc32c;                     // CRC32C of every preceding capsule byte
+}
+
+// Each embedded DHL wire is exactly: 40-byte DHL v1 LE header + payload + CRC32C.
+// Descriptor payload is 96 bytes. Inventory payload is 76 + 32*n bytes, n=1..16.

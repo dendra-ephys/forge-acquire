@@ -1,0 +1,5 @@
+/target/
+*.wal
+*.wal.checkpoint-a
+*.wal.checkpoint-b
+*.wal.seal

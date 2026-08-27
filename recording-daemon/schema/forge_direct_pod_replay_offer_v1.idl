@@ -1,0 +1,55 @@
+schema ForgeDirectPodReplayOfferV1
+status frozen direct-Pod source-frontier companion
+endianness little
+contract_hash sha256(utf8_lf(this_file))
+
+struct DirectPodReplayOfferV1 @size(280) {
+  0 magic: bytes[8] = "FGRRPO01";
+  8 version: u16 = 1;
+  10 total_len: u16 = 280;
+  12 flags: u32;
+  16 contract_hash: bytes[32];
+  48 device_id: bytes[16];
+  64 run_id: bytes[16];
+  80 pod_id: bytes[16];
+  96 headstage_id: bytes[16];
+  112 transport_epoch: u64;
+  120 offer_sequence: u64;
+  128 first_missing_record_sequence: u64;
+  136 last_missing_record_sequence_exclusive: u64;
+  144 oldest_replayable_record_sequence: u64;
+  152 newest_replayable_record_sequence_exclusive: u64;
+  160 source_next_live_record_sequence: u64;
+  168 last_produced_record_sequence_exclusive: u64;
+  176 prior_record_sequence_or_max: u64;
+  184 offer_global_time_ns: u64;
+  192 deadline_global_time_ns: u64;
+  200 reason_code: u16;
+  202 reserved: u16 = 0;
+  204 reserved2: u32 = 0;
+  208 hardware_state_hash: bytes[32];
+  240 parent_protocol_hash: bytes[32];
+  272 reserved3: u32 = 0;
+  276 crc32c: u32 over bytes[0..276];
+}
+
+flags:
+  bit0 LIVE_STREAM_QUIESCED
+  bit1 REQUESTED_RANGE_REPLAYABLE
+  bit2 HOLD_UNTIL_DEADLINE
+  all three bits are required and all other bits must be zero
+
+invariants:
+  all identities, transport_epoch, offer_sequence, times, reason_code and hardware_state_hash are nonzero
+  parent_protocol_hash equals the frozen M0 protocol hash
+  first_missing_record_sequence is less than last_missing_record_sequence_exclusive
+  oldest_replayable_record_sequence is at most first_missing_record_sequence
+  last_missing_record_sequence_exclusive is at most newest_replayable_record_sequence_exclusive
+  newest_replayable_record_sequence_exclusive is at most last_produced_record_sequence_exclusive
+  source_next_live_record_sequence equals last_missing_record_sequence_exclusive
+  prior_record_sequence_or_max equals first_missing_record_sequence minus one, or u64 max when first is zero
+  deadline_global_time_ns is greater than offer_global_time_ns
+  the Pod emits no canonical live record after this offer until the exact Replay completes or the epoch fails
+  the Pod retains the complete offered range through deadline_global_time_ns
+  the host may plan Replay only when first_missing_record_sequence equals its next journal sequence
+  this companion is source evidence, not a host-inferred gap and not permission to resume an old Run or epoch

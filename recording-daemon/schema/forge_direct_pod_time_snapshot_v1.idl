@@ -1,0 +1,40 @@
+schema ForgeDirectPodTimeSnapshotV1
+status frozen direct-Pod hardware-time companion
+endianness little
+contract_hash sha256(utf8_lf(this_file))
+
+struct DirectPodTimeSnapshotV1 @size(152) {
+  0 magic: bytes[8] = "FGRTIM01";
+  8 version: u16 = 1;
+  10 total_len: u16 = 152;
+  12 flags: u32 = 0;
+  16 contract_hash: bytes[32];
+  48 device_id: bytes[16];
+  64 transport_epoch: u64;
+  72 status_sequence: u64;
+  80 global_time_ns: u64;
+  88 sample_counter: u64;
+  96 frame_counter: u64;
+  104 runtime_flags: u32;
+  108 reserved: u32 = 0;
+  112 hardware_state_hash: bytes[32];
+  144 reserved2: u32 = 0;
+  148 crc32c: u32 over bytes[0..148];
+}
+
+runtime_flags:
+  bit0 GLOBAL_TIME_VALID
+  bit1 POD_READY
+  bit2 POD_FAULT
+  bit3 SYNCHRONIZED
+  all other bits must be zero
+
+invariants:
+  contract_hash equals this LF-normalized schema SHA-256
+  device_id and hardware_state_hash are nonzero
+  transport_epoch and global_time_ns are nonzero
+  status_sequence, global_time_ns, sample_counter and frame_counter never regress within one transport epoch
+  GLOBAL_TIME_VALID is required for host deadline evaluation
+  POD_READY must be true and POD_FAULT false before a Run command may be sent
+  host monotonic receipt time may gate freshness only and is never a sample timestamp
+  no USB arrival time may be converted into hardware global time

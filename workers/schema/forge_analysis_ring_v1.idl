@@ -1,0 +1,98 @@
+ForgeAnalysisRingV1
+===================
+
+Status: frozen host-internal shared-memory layout foundation
+Version: 1
+Byte order: little-endian
+Atomic unit: aligned unsigned 64-bit integer
+Cache-line alignment: 64 bytes
+Canonical payload: one complete Forge CanonicalRecordEnvelopeV1 encoded record
+
+This contract defines one single-producer/single-consumer analysis ring. Each
+consumer receives an independent ring. A slow or failed analysis consumer may
+drop records on its own branch but must never wait for or backpressure the
+acquisition journal. Any drop in a closed-loop controller ring latches the
+controller unavailable and requires stimulation disarm. This contract does not
+authorize stimulation and is never exposed to React or the WebView.
+
+Global header: 256 bytes
+------------------------
+
+offset  size  field
+0       8     magic = ASCII FGRRNG01
+8       2     version = 1
+10      2     global_header_bytes = 256
+12      2     slot_header_bytes = 64
+14      2     reserved_zero
+16      4     slot_count, range 2..65536
+20      4     slot_payload_capacity_bytes, range 176..1048752
+24      4     static_flags = 0
+28      4     reserved_zero
+32      32    forge_protocol_hash
+64      16    run_id, nonzero
+80      16    consumer_id, nonzero
+96      8     producer_epoch, nonzero
+104     8     slot_stride_bytes, 64-byte aligned
+112     4     CRC32C over immutable bytes [0,112)
+116     12    reserved_zero
+128     8     published_sequence, atomic; next sequence to publish
+136     8     consumed_sequence, atomic; next sequence to consume
+144     8     dropped_records, atomic
+152     8     producer_heartbeat_monotonic_ns, atomic
+160     8     consumer_heartbeat_monotonic_ns, atomic
+168     8     fault_flags, atomic
+176     80    reserved_zero
+
+fault_flags
+  bit 0  consumer ring full / record dropped
+  bit 1  slot contradiction or corruption
+  all other bits reserved and rejected
+
+Slot header: 64 bytes
+---------------------
+
+offset  size  field
+0       8     committed_sequence, atomic; UINT64_MAX means empty
+8       4     encoded_record_bytes
+12      4     encoded_record_crc32c
+16      8     journal_sequence
+24      8     canonical record_sequence cache
+32      8     canonical global_time_start_ns cache
+40      4     canonical record flags cache
+44      4     reserved_zero
+48      8     committed_sequence_complement
+56      8     reserved_zero
+64      N     complete canonical encoded record; unused capacity is zero
+
+Publish order
+-------------
+
+1. Load consumed_sequence with acquire ordering.
+2. If published_sequence - consumed_sequence >= slot_count, atomically
+   increment dropped_records, set fault bit 0, reject the newest record and
+   return immediately.
+3. Validate the canonical record and write slot metadata, payload, CRC and
+   committed_sequence_complement.
+4. Store committed_sequence with release ordering.
+5. Store published_sequence = sequence + 1 with release ordering.
+
+Consume order
+-------------
+
+1. Load published_sequence with acquire ordering. Equal read/write sequences
+   mean empty.
+2. Load the expected slot committed_sequence with acquire ordering and require
+   both it and its complement to match.
+3. Check bounds, CRC32C, the complete canonical decoder and all redundant cache
+   fields before exposing a SampleBlock to an algorithm.
+4. Store committed_sequence = UINT64_MAX, then store consumed_sequence =
+   sequence + 1 with release ordering.
+
+Restart and security boundary
+-----------------------------
+
+A worker restart never resumes an old mapping. The daemon creates a new mapping
+with a fresh producer_epoch and consumer-specific identity. A production
+Windows mapping requires an explicit service/operator/worker SID DACL and an
+authenticated named-pipe handoff. Byte-layout, mapping, cross-process ordering,
+handoff, restart and target-load behavior require separate evidence gates.

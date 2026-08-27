@@ -1,0 +1,58 @@
+forge_artifact_protocol ForgeNwbGenerationReceiptV1 {
+  byte_order = little_endian;
+  version = 1;
+  checksum = crc32c_castagnoli;
+  contract_hash = sha256(utf8_lf(this_file));
+
+  flags ValidationFlags : u32 {
+    JOURNAL_SEALED = 0x00000001;
+    JOURNAL_DURABLE_TO_EXPECTED_LAST = 0x00000002;
+    NWB_CLOSED = 0x00000004;
+    UNCOMPRESSED = 0x00000008;
+    SCHEMA_VALID = 0x00000010;
+    INSPECTOR_NO_CRITICAL = 0x00000020;
+    PROVENANCE_RECONCILED = 0x00000040;
+    NEW_GENERATION_ONLY = 0x00000080;
+    PUBLICATION_AUTHORIZED = 0x00000100;
+  }
+
+  // This receipt is a validator observation, never publication authority.
+  // Bits 0..7 must all be set and PUBLICATION_AUTHORIZED must be clear.
+  // Empty journals encode expected_last_journal_sequence as u64::MAX.
+  struct NwbGenerationValidationReceiptV1 @size(544) {
+    0 magic: bytes[8] = "FGRNWB01";
+    8 version: u16 = 1;
+    10 receipt_len: u16 = 544;
+    12 validation_flags: ValidationFlags;
+    16 run_id: bytes[16];
+    32 generation: u32;
+    36 pod_count: u16;
+    38 reserved0: u16 = 0;
+    40 expected_last_journal_sequence: u64;
+    48 checked_blocks: u64;
+    56 total_samples: u64;
+    64 validated_at_unix_ns: u64;
+    72 journal_bytes: u64;
+    80 nwb_bytes: u64;
+    88 schema_error_count: u32;
+    92 inspector_critical_count: u32;
+    96 reconciliation_error_count: u32;
+    100 reserved1: u32 = 0;
+    104 host_protocol_hash: bytes[32];
+    136 receipt_contract_hash: bytes[32];
+    168 journal_sha256: bytes[32];
+    200 journal_seal_sha256: bytes[32];
+    232 durable_checkpoint_set_sha256: bytes[32];
+    264 nwb_sha256: bytes[32];
+    296 schema_plan_sha256: bytes[32];
+    328 dependency_lock_sha256: bytes[32];
+    360 materializer_build_sha256: bytes[32];
+    392 validation_report_sha256: bytes[32];
+    424 samples_manifest_sha256: bytes[32];
+    456 session_manifest_sha256: bytes[32];
+    488 run_ledger_seal_evidence_sha256: bytes[32];
+    520 validation_sequence: u64;
+    528 reserved2: bytes[12] = 0;
+    540 receipt_crc32c: u32 = crc32c(bytes[0..540]);
+  }
+}

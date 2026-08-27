@@ -1,0 +1,12 @@
+[package]
+name = "forge-protocol-v1"
+version = "0.1.0"
+edition = "2021"
+description = "Forge host-internal protocol v1 codec and fail-closed stimulation contract"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+name = "forge_protocol_v1"
+path = "src/lib.rs"
+

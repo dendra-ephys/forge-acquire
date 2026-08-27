@@ -1,0 +1,31 @@
+forge_receipt ForgeFt600AdmissionReceiptV1 {
+  byte_order = little_endian;
+  version = 1;
+  checksum = crc32c_castagnoli;
+  contract_hash = sha256(utf8_lf(this_file));
+
+  struct Ft600AdmissionReceiptV1 @size(288) {
+    0 magic: bytes[8] = "FGRD3A01";
+    8 version: u16 = 1;
+    10 receipt_len: u16 = 288;
+    12 flags: u32 = 0;
+    16 contract_hash: bytes[32];
+    48 receipt_id: bytes[16];
+    64 device_id: bytes[16];
+    80 serial_ascii_nul_padded: bytes[16];
+    96 library_sha256: bytes[32];
+    128 configuration_readback_sha256: bytes[32];
+    160 usb_descriptor_sha256: bytes[32];
+    192 hardware_protocol_hash: bytes[32];
+    224 approval_authority_hash: bytes[32];
+    256 issued_unix_ns: u64;
+    264 expires_unix_ns: u64;
+    272 reserved: bytes[12] = 0;
+    284 crc32c: u32 = crc32c(bytes[0..284]);
+  }
+
+  // This receipt is deployment admission evidence, not a device-generated
+  // attestation or a digital signature. Production loading additionally
+  // requires exact out-of-band receipt SHA-256 and approval-authority hash
+  // values from the protected service configuration.
+}

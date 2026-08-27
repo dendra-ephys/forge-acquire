@@ -1,0 +1,217 @@
+forge_protocol ForgeHostInternalV1 {
+  byte_order = little_endian;
+  version = 1;
+  max_record_payload_bytes = 1048576;
+  max_low_speed_message_bytes = 1048576;
+  checksum = crc32c_castagnoli;
+  contract_hash = sha256(utf8_lf(this_file));
+
+  enum RecordKind : u16 {
+    SAMPLE_BLOCK = 1; MARKER = 2; FAULT = 3; ONLINE_ANALYSIS = 4;
+    STIM_INTENT = 5; STIM_RECEIPT = 6;
+  }
+  enum SampleFormat : u16 { I16_LE = 1; }
+  flags RecordFlags : u32 {
+    DISCONTINUITY_BEFORE = 0x00000001; SOURCE_CRC_ERROR = 0x00000002;
+    SOURCE_OVERFLOW = 0x00000004; CLOCK_UNLOCKED = 0x00000008;
+    REPLAYED = 0x00000010; STIM_ARTIFACT = 0x00000020;
+  }
+
+  struct CanonicalRecordEnvelopeV1Header @size(176) {
+    0 magic: bytes[8] = "FGRREC01";
+    8 version: u16 = 1; 10 header_len: u16 = 176;
+    12 record_kind: RecordKind; 14 reserved0: u16 = 0;
+    16 flags: RecordFlags; 20 payload_len: u32;
+    24 run_id: bytes[16]; 40 pod_id: bytes[16]; 56 headstage_id: bytes[16];
+    72 record_sequence: u64;
+    80 frame_start: u64; 88 frame_end_exclusive: u64;
+    96 sample_start: u64; 104 sample_end_exclusive: u64;
+    112 global_time_start_ns: u64; 120 global_time_end_exclusive_ns: u64;
+    128 channel_layout_id: u32; 132 channel_count: u16;
+    134 sample_format: SampleFormat;
+    136 protocol_hash: bytes[32];
+    168 payload_crc32c: u32;
+    172 header_crc32c: u32 = crc32c(bytes[0..172]);
+  }
+
+  flags SampleBlockFlags : u32 {
+    COMPLETE = 0x00000001; HARDWARE_TIMESTAMPED = 0x00000002;
+  }
+  struct SampleBlockV1Header @size(32) {
+    0 version: u16 = 1; 2 header_len: u16 = 32;
+    4 flags: SampleBlockFlags; 8 samples_per_channel: u32;
+    12 channel_count: u16; 14 sample_format: SampleFormat = I16_LE;
+    16 sample_rate_numerator_hz: u32; 20 sample_rate_denominator: u32;
+    24 first_sample_counter: u64;
+  }
+  // SampleBlock data follows sample-major, then ascending layout channel:
+  // [t0c0, t0c1, ..., t1c0, ...], each sample signed i16 little-endian.
+
+  enum MessageKind : u16 {
+    DEVICE_CAPABILITIES = 1; RUN_COMMAND = 2; SAFETY_PROFILE = 3;
+    STIM_INTENT = 4; STIM_COMMAND = 5; STIM_RECEIPT = 6;
+    WORKER_TOKEN_LEASE = 7; ACK = 8; NACK = 9; REPLAY_REQUEST = 10;
+  }
+  struct LowSpeedHeaderV1 @size(80) {
+    0 total_len: u32; 4 magic: bytes[8] = "FGRCTL01";
+    12 version: u16 = 1; 14 header_len: u16 = 80;
+    16 message_kind: MessageKind; 18 flags: u16;
+    20 body_len: u32; 24 request_id: u64; 32 epoch: u64;
+    40 protocol_hash: bytes[32]; 72 body_crc32c: u32;
+    76 header_crc32c: u32 = crc32c(bytes[0..76]);
+  }
+  // For a given authenticated caller and epoch, request_id identifies one
+  // idempotent operation. Reusing it with different bytes is a hard NACK.
+
+  enum TransportKind : u8 { DIRECT_D3XX = 1; AGGREGATOR_10GBE = 2; REPLAY = 3; }
+  enum StimKind : u16 { NONE = 0; RHS2116 = 1; }
+  flags CapabilityFlags : u32 {
+    ACK_REPLAY = 0x00000001; GLOBAL_TIME = 0x00000002;
+    STOP_ACK = 0x00000004; STIM_RECEIPTS = 0x00000008;
+    PHYSICAL_ENABLE_INTERLOCK = 0x00000010; HARDWARE_WATCHDOG = 0x00000020;
+    NONCE_DEDUP = 0x00000040; NO_OVERLAP_STIM = 0x00000080;
+    EMERGENCY_STOP_LOOP = 0x00000100;
+    DEFAULT_OFF_STIM_POWER_GATE = 0x00000200;
+  }
+  flags RuntimeSafetyFlags : u32 {
+    PHYSICAL_ENABLE_ASSERTED = 0x00000001; STIM_POWER_ENABLED = 0x00000002;
+    WATCHDOG_HEALTHY = 0x00000004; COMPLIANCE_READY = 0x00000008;
+    CLOCK_LOCKED = 0x00000010; LINK_HEALTHY = 0x00000020;
+    EMERGENCY_STOP_HEALTHY = 0x00000040;
+  }
+  struct DeviceCapabilitiesV1 @size(84) {
+    0 version: u16 = 1; 2 body_len: u16 = 84;
+    4 device_id: bytes[16]; 20 transport: TransportKind;
+    21 max_pods: u8; 22 max_channels_per_pod: u16;
+    24 sample_format_mask: u32; 28 min_sample_rate_hz: u32;
+    32 max_sample_rate_hz: u32; 36 stim_kind: StimKind;
+    38 stim_channels: u16; 40 max_sample_block_us: u32;
+    44 capability_flags: CapabilityFlags;
+    48 runtime_safety_flags: RuntimeSafetyFlags;
+    52 hardware_protocol_hash: bytes[32];
+  }
+  // max_pods is 1 for DIRECT_D3XX and 1..8 otherwise; max_channels_per_pod is
+  // 1..256. RHS2116 always advertises exactly 16 stimulation channels.
+
+  enum RunCommandKind : u16 {
+    PREPARE = 1; ARM = 2; START = 3; STOP = 4; ABORT = 5;
+    GET_SNAPSHOT = 6; ACKNOWLEDGE_FAILURE = 7;
+  }
+  enum RunScope : u16 { RECORDING = 1; STIMULATION = 2; }
+  struct RunCommandV1 @size(80) {
+    0 version: u16 = 1; 2 body_len: u16 = 80;
+    4 command: RunCommandKind; 6 scope: RunScope;
+    8 run_id: bytes[16]; 24 target_device_id: bytes[16];
+    40 deadline_global_time_ns: u64; 48 frozen_config_hash: bytes[32];
+  }
+
+  enum ApprovalState : u8 { DRAFT = 0; APPROVED = 1; REVOKED = 2; }
+  enum ElectrodeMaterial : u8 {
+    UNKNOWN = 0; PLATINUM_IRIDIUM = 1; IRIDIUM_OXIDE = 2;
+    STAINLESS_STEEL = 3; TUNGSTEN = 4; NICHROME = 5; OTHER_REVIEWED = 255;
+  }
+  enum RecoveryPolicy : u16 {
+    DISARM_AND_REQUIRE_ACK = 1; DISARM_AND_REQUIRE_REARM = 2;
+  }
+  struct SafetyProfileV1 @size(288) {
+    0 version: u16 = 1; 2 body_len: u16 = 288;
+    4 profile_id: bytes[16]; 20 approval_state: ApprovalState;
+    21 electrode_material: ElectrodeMaterial; 22 recovery_policy: RecoveryPolicy;
+    24 wire_diameter_nm: u32; 28 exposed_area_um2: u32;
+    32 impedance_min_ohm: u32; 36 impedance_max_ohm: u32;
+    40 max_current_na: u32; 44 max_phase_width_us: u32;
+    48 min_interphase_us: u32; 52 max_frequency_millihz: u32;
+    56 max_train_pulses: u32; 60 max_train_duration_ms: u32;
+    64 max_duty_cycle_ppm: u32; 68 reserved0: u32 = 0;
+    72 max_charge_per_phase_pc: u64;
+    80 max_charge_density_pc_per_mm2: u64;
+    88 compliance_min_uv: i32; 92 compliance_max_uv: i32;
+    96 experiment_protocol_hash: bytes[32];
+    128 electrode_geometry_hash: bytes[32];
+    160 hardware_build_hash: bytes[32];
+    192 software_build_hash: bytes[32];
+    224 approved_limits_hash: bytes[32];
+    256 approval_authority_hash: bytes[32];
+  }
+
+  struct StimIntentV1 @size(240) {
+    0 version: u16 = 1; 2 body_len: u16 = 240;
+    4 run_id: bytes[16]; 20 source_worker_id: bytes[16];
+    36 control_token_id: bytes[16]; 52 source_record_sequence: u64;
+    60 source_sample_counter: u64; 68 source_global_time_ns: u64;
+    76 algorithm_hash: bytes[32]; 108 config_hash: bytes[32];
+    140 template_hash: bytes[32]; 172 channel_map_hash: bytes[32];
+    204 target_channel: u16; 206 template_id: u16;
+    208 intent_flags: u32; 212 reserved0: u32 = 0;
+    216 deadline_global_time_ns: u64; 224 intent_nonce: bytes[16];
+  }
+  // intent_flags is reserved in v1 and must be zero.
+
+  struct StimCommandV1 @size(232) {
+    0 version: u16 = 1; 2 body_len: u16 = 232;
+    4 run_id: bytes[16]; 20 command_id: bytes[16];
+    36 intent_nonce: bytes[16]; 52 device_id: bytes[16];
+    68 safety_profile_hash: bytes[32]; 100 template_hash: bytes[32];
+    132 channel_map_hash: bytes[32]; 164 target_channel: u16;
+    166 template_id: u16; 168 current_na: u32;
+    172 cathodic_phase_us: u32; 176 interphase_us: u32;
+    180 anodic_phase_us: u32; 184 frequency_millihz: u32;
+    188 pulse_count: u32; 192 deadline_global_time_ns: u64;
+    200 execute_not_before_global_time_ns: u64; 208 arm_epoch: u64;
+    216 command_nonce: bytes[16];
+  }
+  // v1 commands are fixed charge-balanced biphasic templates and require
+  // cathodic_phase_us == anodic_phase_us. Algorithms never emit this type.
+
+  enum StimResult : u16 {
+    EXECUTED = 1; REJECTED_EXPIRED = 2; REJECTED_DUPLICATE = 3;
+    REJECTED_DISARMED = 4; REJECTED_INTERLOCK = 5;
+    REJECTED_COMPLIANCE = 6; REJECTED_LIMIT = 7; HARDWARE_FAULT = 8;
+  }
+  struct StimReceiptV1 @size(168) {
+    0 version: u16 = 1; 2 body_len: u16 = 168;
+    4 run_id: bytes[16]; 20 command_id: bytes[16];
+    36 intent_nonce: bytes[16]; 52 device_id: bytes[16];
+    68 result: StimResult; 70 fault_code: u16;
+    72 target_channel: u16; 74 template_id: u16;
+    76 actual_start_global_time_ns: u64; 84 actual_end_global_time_ns: u64;
+    92 measured_compliance_uv: i32; 96 peak_current_na: u32;
+    100 receipt_flags: u32; 104 delivered_phase_charge_pc: u64;
+    112 arm_epoch: u64; 120 receipt_nonce: bytes[16];
+    136 hardware_state_hash: bytes[32];
+  }
+  // receipt_flags is reserved in v1 and must be zero.
+
+  enum WorkerRole : u8 { OBSERVER = 1; CONTROLLER = 2; }
+  enum LeaseState : u8 { GRANTED = 1; REVOKED = 2; EXPIRED = 3; }
+  struct WorkerTokenLeaseV1 @size(288) {
+    0 version: u16 = 1; 2 body_len: u16 = 288;
+    4 run_id: bytes[16]; 20 worker_id: bytes[16]; 36 token_id: bytes[16];
+    52 role: WorkerRole; 53 state: LeaseState; 54 reserved0: u16 = 0;
+    56 arm_epoch: u64; 64 issued_global_time_ns: u64;
+    72 expires_global_time_ns: u64; 80 safety_profile_id: bytes[16];
+    96 safety_profile_hash: bytes[32]; 128 algorithm_hash: bytes[32];
+    160 config_hash: bytes[32]; 192 template_hash: bytes[32];
+    224 channel_map_hash: bytes[32]; 256 worker_build_hash: bytes[32];
+  }
+
+  struct AckV1 @size(60) {
+    0 version: u16 = 1; 2 body_len: u16 = 60;
+    4 acknowledged_request_id: u64; 12 applied_epoch: u64;
+    20 ack_code: u16; 22 state_code: u16; 24 reserved0: u32 = 0;
+    28 receipt_hash: bytes[32];
+  }
+  struct NackV1 @size(60) {
+    0 version: u16 = 1; 2 body_len: u16 = 60;
+    4 rejected_request_id: u64; 12 current_epoch: u64;
+    20 error_code: u16; 22 retryable: u8; 23 reserved0: u8 = 0;
+    24 detail_code: u32; 28 state_hash: bytes[32];
+  }
+  struct ReplayRequestV1 @size(96) {
+    0 version: u16 = 1; 2 body_len: u16 = 96;
+    4 run_id: bytes[16]; 20 pod_id: bytes[16];
+    36 first_record_sequence: u64; 44 last_record_sequence_exclusive: u64;
+    52 deadline_global_time_ns: u64; 60 reason_code: u16;
+    62 reserved0: u16 = 0; 64 request_context_hash: bytes[32];
+  }
+}

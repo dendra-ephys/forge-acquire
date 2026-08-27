@@ -1,0 +1,112 @@
+Forge Event Payload Extension V1
+================================
+
+Status: frozen host-internal canonical-record payload extension
+Byte order: little-endian
+Hash policy: SHA-256 over this UTF-8 file after CRLF/CR normalization to LF
+Parent envelope: Forge CanonicalRecordEnvelopeV1, protocol v1 unchanged
+Maximum body bytes: 65536
+
+Every payload starts with EventHeaderV1. The embedded extension_contract_hash
+binds payload semantics without modifying the already frozen Forge protocol-v1
+IDL or its hash. Marker, Fault/Gap and OnlineAnalysis records must not be
+accepted merely because their outer canonical-envelope CRC is valid.
+
+enum EventPayloadKind : u16 {
+  MARKER = 1;
+  FAULT = 2;
+  GAP = 3;
+  ONLINE_ANALYSIS = 4;
+}
+
+struct EventHeaderV1 @size(80) {
+  0  magic: bytes[8] = "FGREVT01";
+  8  version: u16 = 1;
+  10 payload_kind: EventPayloadKind;
+  12 header_bytes: u16;
+  14 reserved0: u16 = 0;
+  16 total_bytes: u32;
+  20 body_bytes: u32;
+  24 extension_contract_hash: bytes[32];
+  56 event_id: bytes[16], nonzero;
+  72 reserved1: bytes[8] = 0;
+}
+
+MarkerPayloadV1 @header_size(104), outer RecordKind=MARKER {
+  80 marker_sequence: u64;
+  88 label_bytes: u16, range 1..256;
+  90 note_bytes: u16, range 0..2048;
+  92 marker_flags: u32, exactly one of OPERATOR=bit0 or EXTERNAL=bit1;
+  96 reserved2: bytes[8] = 0;
+  104 body: label UTF-8 followed by note UTF-8, no NUL, exact lengths;
+}
+
+enum FaultSeverity : u8 { INFO=1; WARNING=2; ERROR=3; FATAL=4; }
+enum FaultLayer : u8 {
+  RECEIVER_CAPTURE=1; POD_FT600=2; D3XX_HOST=3; AGGREGATOR_RING=4;
+  NETWORK_SOCKET=5; RECORD_WRITER=6; ANALYSIS_WORKER=7;
+  MATERIALIZER=8; SYNCHRONIZATION=9; STIMULATION=10;
+}
+enum FaultCode : u16 {
+  SOURCE_CRC=1; COUNTER_GAP=2; CAPTURE_OVERFLOW=3;
+  FT600_BACKPRESSURE=4; D3XX_QUEUE=5; AGGREGATOR_OVERFLOW=6;
+  SOCKET_DROP=7; WRITER_IO=8; SYNC_LOST=9; ANALYSIS_DROP=10;
+  MATERIALIZER_FAILURE=11; DEADLINE_MISS=12; RECEIPT_CONTRADICTION=13;
+  COMPLIANCE_FAULT=14; INTERLOCK_FAULT=15; TRANSPORT_DISCONNECT=16;
+}
+FaultPayloadV1 @header_size(104), outer RecordKind=FAULT {
+  80 fault_code: FaultCode;
+  82 severity: FaultSeverity;
+  83 layer: FaultLayer;
+  84 fault_flags: u32, bit0 RUN_LATCHED, bit1 STIM_DISARMING;
+  88 occurrence_count: u64, nonzero;
+  96 detail_bytes: u16, range 0..2048;
+  98 reserved2: bytes[6] = 0;
+  104 body: optional UTF-8 detail, no NUL, exact length;
+}
+
+enum GapReason : u16 {
+  SOURCE_CRC=1; COUNTER_DISCONTINUITY=2; CAPTURE_OVERFLOW=3;
+  TRANSPORT_DISCONNECT=4; REPLAY_UNAVAILABLE=5; CLOCK_LOSS=6;
+}
+GapPayloadV1 @header_size(112), outer RecordKind=FAULT {
+  80 gap_reason: GapReason;
+  82 layer: FaultLayer;
+  83 reserved2: u8 = 0;
+  84 gap_flags: u32, bit0 RUN_LATCHED, bit1 STIM_DISARMING;
+  88 missing_record_count: u64;
+  96 missing_frame_count: u64;
+  104 missing_sample_count: u64;
+  invariant: at least one missing count is nonzero;
+  invariant: no body bytes;
+}
+
+OnlineAnalysisPayloadV1 @header_size(248), outer RecordKind=ONLINE_ANALYSIS {
+  80 worker_id: bytes[16], nonzero;
+  96 worker_build_hash: bytes[32], nonzero;
+  128 algorithm_hash: bytes[32], nonzero;
+  160 config_hash: bytes[32], nonzero;
+  192 result_schema_hash: bytes[32], nonzero;
+  224 source_record_sequence: u64;
+  232 channel_id: u32, UINT32_MAX means no single-channel scope;
+  236 analysis_flags: u32, bit0 REFERENCE_ONLY, bit1 CONTROLLER_CANDIDATE;
+  240 result_bytes: u32, range 1..4096;
+  244 reserved2: u32 = 0;
+  248 body: UTF-8 result text, no NUL, interpreted only through result_schema_hash;
+}
+
+Outer-envelope bindings
+-----------------------
+
+- EventHeader.event_id is distinct from the Run/Pod/Headstage identities.
+- The outer envelope supplies Run, Pod, Headstage, event record_sequence and
+  the affected end-exclusive frame/sample/global-time ranges.
+- MARKER requires MarkerPayloadV1.
+- FAULT requires either FaultPayloadV1 or GapPayloadV1.
+- ONLINE_ANALYSIS requires OnlineAnalysisPayloadV1.
+- STIM_INTENT payload is the exact existing 240-byte StimIntentV1 body and its
+  Run/source ranges must agree with the outer envelope.
+- STIM_RECEIPT payload is the exact existing 168-byte StimReceiptV1 body and
+  its Run/execution range must agree with the outer envelope.
+- A closed-loop analysis-ring drop is FaultCode=ANALYSIS_DROP at
+  FaultLayer=ANALYSIS_WORKER with RUN_LATCHED and STIM_DISARMING set.

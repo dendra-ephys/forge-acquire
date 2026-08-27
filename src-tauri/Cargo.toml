@@ -1,0 +1,20 @@
+[package]
+name = "forge-acquire"
+version = "0.1.0"
+description = "Forge neural recording acquisition desktop"
+authors = ["Forge contributors"]
+edition = "2021"
+
+[lib]
+name = "forge_acquire_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+forge-acqd = { path = "../recording-daemon" }
+forge-protocol-v1 = { path = "../protocol/rust" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

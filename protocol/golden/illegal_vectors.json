@@ -1,0 +1,20 @@
+{
+  "schema": "ForgeHostInternalV1",
+  "note": "Mutations are expressed against canonical golden vector names. Every decoder or safety gate must reject them.",
+  "cases": [
+    {"name": "record_bad_magic", "base": "canonical_record_envelope_v1", "mutation": "byte[0] ^= 0x01", "expect": "bad_magic"},
+    {"name": "record_unknown_flags", "base": "canonical_record_envelope_v1", "mutation": "flags |= 0x80000000; recompute_header_crc", "expect": "unknown_flags"},
+    {"name": "record_bad_payload_crc", "base": "canonical_record_envelope_v1", "mutation": "last_payload_byte ^= 0x01", "expect": "payload_crc"},
+    {"name": "control_oversize", "base": "device_capabilities_v1", "mutation": "total_len = 1048577; recompute_header_crc", "expect": "length_limit"},
+    {"name": "control_protocol_mismatch", "base": "device_capabilities_v1", "mutation": "protocol_hash[0] ^= 0x01; recompute_header_crc", "expect": "protocol_hash"},
+    {"name": "control_unknown_kind", "base": "device_capabilities_v1", "mutation": "message_kind = 65535; recompute_header_crc", "expect": "unknown_kind"},
+    {"name": "stim_rhd_only", "base": "stim_intent_v1", "mutation": "capabilities.stim_kind = NONE", "expect": "stim_not_capable"},
+    {"name": "stim_missing_profile", "base": "stim_intent_v1", "mutation": "profile = null", "expect": "missing_profile"},
+    {"name": "stim_unapproved_profile", "base": "stim_intent_v1", "mutation": "profile.approval_state = DRAFT", "expect": "profile_not_approved"},
+    {"name": "stim_interlock_open", "base": "stim_intent_v1", "mutation": "runtime_safety_flags &= ~INTERLOCK_CLOSED", "expect": "interlock"},
+    {"name": "stim_wrong_epoch", "base": "stim_intent_v1", "mutation": "message.epoch += 1", "expect": "epoch"},
+    {"name": "stim_expired", "base": "stim_intent_v1", "mutation": "now = deadline_global_time_ns", "expect": "deadline"},
+    {"name": "stim_hash_mismatch", "base": "stim_intent_v1", "mutation": "intent.template_hash[0] ^= 0x01", "expect": "frozen_hash"},
+    {"name": "stim_limit_exceeded", "base": "stim_command_v1", "mutation": "current_na = profile.max_current_na + 1", "expect": "safety_limit"}
+  ]
+}

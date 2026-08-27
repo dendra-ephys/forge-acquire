@@ -1,0 +1,108 @@
+schema DirectPodRecordReleaseV1
+status frozen direct-Pod durable-record release companion
+endianness little
+contract_hash sha256(utf8_lf(this_file))
+parent_protocol_hash forge_protocol_v1.contract_hash
+crc32c Castagnoli
+
+struct DirectPodRecordReleaseRequestV1 @size(312) {
+  0 magic: bytes[8] = "FGRREL01";
+  8 version: u16 = 1;
+  10 total_len: u16 = 312;
+  12 flags: u32 = 0;
+  16 contract_hash: bytes[32];
+  48 parent_protocol_hash: bytes[32];
+  80 device_id: bytes[16];
+  96 run_id: bytes[16];
+  112 pod_id: bytes[16];
+  128 headstage_id: bytes[16];
+  144 transport_epoch: u64;
+  152 request_id: u64;
+  160 first_record_sequence: u64;
+  168 last_record_sequence_inclusive: u64;
+  176 release_record_count: u16;
+  178 expected_store_depth: u16;
+  180 reserved0: u32 = 0;
+  184 durable_journal_sequence: u64;
+  192 durable_record_count: u64;
+  200 durable_checkpoint_generation: u64;
+  208 durable_prefix_hash: bytes[32];
+  240 durable_checkpoint_hash: bytes[32];
+  272 completion_evidence_hash: bytes[32];
+  304 reserved1: u32 = 0;
+  308 crc32c: u32 over bytes[0..308];
+}
+
+struct DirectPodRecordReleaseReplyV1 @size(312) {
+  0 magic: bytes[8] = "FGRRLR01";
+  8 version: u16 = 1;
+  10 total_len: u16 = 312;
+  12 status: u16;
+  14 state_flags: u16;
+  16 contract_hash: bytes[32];
+  48 parent_protocol_hash: bytes[32];
+  80 device_id: bytes[16];
+  96 run_id: bytes[16];
+  112 pod_id: bytes[16];
+  128 headstage_id: bytes[16];
+  144 requested_epoch: u64;
+  152 current_epoch: u64;
+  160 request_id: u64;
+  168 request_hash: bytes[32];
+  200 released_through_inclusive: u64;
+  208 oldest_retained_sequence: u64;
+  216 newest_committed_sequence_inclusive: u64;
+  224 store_depth: u16;
+  226 retained_count: u16;
+  228 reserved0: bytes[12] = 0;
+  240 store_state_hash: bytes[32];
+  272 receipt_hash: bytes[32];
+  304 reserved1: u32 = 0;
+  308 crc32c: u32 over bytes[0..308];
+}
+
+request_completion_preimage:
+  "FORGE-DIRECT-POD-RECORD-RELEASE-EVIDENCE-V1\\0" || contract_hash || parent_protocol_hash ||
+  device_id || run_id || pod_id || headstage_id || LE64(transport_epoch) || LE64(request_id) ||
+  LE64(first_record_sequence) || LE64(last_record_sequence_inclusive) || LE16(release_record_count) ||
+  LE16(expected_store_depth) || LE64(durable_journal_sequence) || LE64(durable_record_count) ||
+  LE64(durable_checkpoint_generation) || durable_prefix_hash || durable_checkpoint_hash
+
+request_hash:
+  SHA256(exact 312-byte encoded DirectPodRecordReleaseRequestV1, including its CRC32C)
+
+prefix_preimage:
+  "FORGE-DIRECT-POD-RECORD-RELEASE-PREFIX-V1\\0" || LE64(first_record_sequence) ||
+  LE64(last_record_sequence_inclusive) || LE16(release_record_count) || exact canonical record SHA256 hashes
+
+store_state_preimage:
+  "FORGE-DIRECT-POD-RECORD-STORE-STATE-V1\\0" || contract_hash || parent_protocol_hash ||
+  device_id || run_id || pod_id || headstage_id || LE64(current_epoch) || LE16(state_flags) ||
+  LE64(released_through_inclusive) || LE64(oldest_retained_sequence) ||
+  LE64(newest_committed_sequence_inclusive) || LE16(store_depth) || LE16(retained_count) ||
+  for each retained canonical record in ascending sequence: LE64(record_sequence) || SHA256(exact canonical record bytes)
+
+reply_receipt_preimage:
+  "FORGE-DIRECT-POD-RECORD-RELEASE-RECEIPT-V1\\0" || contract_hash || parent_protocol_hash ||
+  device_id || run_id || pod_id || headstage_id || LE16(status) || LE16(state_flags) ||
+  LE64(requested_epoch) || LE64(current_epoch) || LE64(request_id) || request_hash ||
+  LE64(released_through_inclusive) || LE64(oldest_retained_sequence) ||
+  LE64(newest_committed_sequence_inclusive) || LE16(store_depth) || LE16(retained_count) || store_state_hash
+
+request invariants:
+  all identities and evidence hashes are nonzero; transport_epoch/request_id/checkpoint_generation are nonzero
+  release_record_count and expected_store_depth are each 1..2 and count <= depth
+  durable_record_count is positive and at least release_record_count
+  checked range is nonempty and exactly release_record_count, including the u64 max singleton
+
+reply invariants:
+  status APPLIED=1 DUPLICATE=2 STALE=3 FUTURE=4 WRONG_EPOCH=5 WRONG_HASH=6 REJECTED=7 ABORTED=8
+  state flags HAS_RELEASED=bit0 HAS_RETAINED=bit1 HAS_COMMITTED=bit2 SEQUENCE_TERMINAL=bit3 only
+  all identities/hashes and requested/current epochs/request_id are nonzero
+  SEQUENCE_TERMINAL iff HAS_COMMITTED and newest committed is u64 max
+  without HAS_COMMITTED, HAS_RELEASED/HAS_RETAINED/SEQUENCE_TERMINAL are clear and all frontiers/count are zero
+  HAS_RETAINED iff retained_count is positive; then newest committed equals oldest retained plus retained_count minus one
+  with HAS_RETAINED and HAS_RELEASED, released through plus one equals oldest retained; without HAS_RELEASED, oldest retained is zero
+  committed with retained_count zero requires HAS_RELEASED and released through equals newest committed
+  HAS_RELEASED implies HAS_COMMITTED and released through is at most newest committed
+  APPLIED or DUPLICATE requires HAS_RELEASED
