@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "decision": "DEC-HEADSTAGE-003",
+  "status": "ten_product_identities_frozen_individual_release_gates_open",
+  "imu_policy": "orthogonal_dnp_option_not_a_neural_profile",
+  "decode_only_profiles": ["rhd2132x2"],
+  "products": [
+    {"name":"rhd2132x1","neural":["RHD2132"],"channels":32,"echem":false,"stim":false,"connector":"5033763410","graph_closed":true},
+    {"name":"rhd2164x1","neural":["RHD2164"],"channels":64,"echem":false,"stim":false,"connector":"5024307012","graph_closed":false},
+    {"name":"rhd2164x2","neural":["RHD2164","RHD2164"],"channels":128,"echem":false,"stim":false,"connector":"2x5024307012","graph_closed":false},
+    {"name":"rhd2132x1_echem","neural":["RHD2132"],"channels":32,"echem":true,"stim":false,"connector":"5033764010","graph_closed":true},
+    {"name":"rhd2164x1_echem","neural":["RHD2164"],"channels":64,"echem":true,"stim":false,"connector":"5024307012","graph_closed":false},
+    {"name":"rhs2116x1","neural":["RHS2116"],"channels":16,"echem":false,"stim":true,"connector":"5033763410","graph_closed":true},
+    {"name":"rhs2116x2","neural":["RHS2116","RHS2116"],"channels":32,"echem":false,"stim":true,"connector":"5033763410","graph_closed":true},
+    {"name":"rhd2132x1_rhs2116x1","neural":["RHD2132","RHS2116"],"channels":48,"echem":false,"stim":true,"connector":"5033765020","graph_closed":false},
+    {"name":"rhd2164x1_rhs2116x1","neural":["RHD2164","RHS2116"],"channels":80,"echem":false,"stim":true,"connector":null,"minimum_signal_contacts":82,"graph_closed":false},
+    {"name":"rhs2116x1_echem","neural":["RHS2116"],"channels":16,"echem":true,"stim":true,"connector":"5033764010","graph_closed":true}
+  ],
+  "mixed_50p_contract": {
+    "mpn": "5033765020",
+    "contacts": 50,
+    "rhd2132_channels": [1, 32],
+    "rhs2116_channels": [33, 48],
+    "shared_reference_contact": 49,
+    "ground_contact": 50,
+    "exact_ecad_status": "manual_import_required",
+    "mechanical_note": "50P member has no solder tabs or plastic pegs; enclosure alignment and strain relief required"
+  }
+}

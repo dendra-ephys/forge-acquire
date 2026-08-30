@@ -4,7 +4,6 @@ import {
   CircleStop,
   Eye,
   EyeOff,
-  FileCheck2,
   PanelRightClose,
   Play,
   RefreshCw,
@@ -16,6 +15,7 @@ import type {
   PreviewSessionState,
   RecordingTargetReservation,
 } from "../adapters/acquireAdapter";
+import type { RunOutputSummary } from "../core/runOutputState";
 import type { RecordingSetupMode } from "./PreflightDialog";
 
 export interface RunControlPanelProps {
@@ -31,7 +31,7 @@ export interface RunControlPanelProps {
   recordingArmed: boolean;
   recording: boolean;
   recordingStopped: boolean;
-  durabilityProven: boolean;
+  runOutput: RunOutputSummary;
   finalized: boolean;
   recoveryRequired: boolean;
   canConnect: boolean;
@@ -45,7 +45,6 @@ export interface RunControlPanelProps {
   previewDeviceName: string;
   canStart: boolean;
   canStopRecording: boolean;
-  canFinalize: boolean;
   canRecover: boolean;
   canAcknowledgeFailed: boolean;
   onConnect: () => void;
@@ -56,18 +55,16 @@ export interface RunControlPanelProps {
   onSetupMultiRecording: () => void;
   onStart: () => void;
   onStopRecording: () => void;
-  onFinalize: () => void;
   onRecover: () => void;
   onAcknowledgeFailed: () => void;
   onCollapse: () => void;
 }
 
 const FLOW = [
-  { id: "setup", label: "Setup" },
-  { id: "armed", label: "Record Ready" },
-  { id: "recording", label: "Recording" },
-  { id: "stopped", label: "Input Stopped" },
-  { id: "finalized", label: "Sealed" },
+  { id: "setup", label: "设置" },
+  { id: "armed", label: "可记录" },
+  { id: "recording", label: "记录中" },
+  { id: "saved", label: "最终 NWB" },
 ] as const;
 
 function previewLabel(state: PreviewSessionState): string {
@@ -80,8 +77,8 @@ function previewLabel(state: PreviewSessionState): string {
 
 function targetReadoutLabel(target: RecordingTargetReservation): string {
   return target.directoryCreateDisposition === "created_new"
-    ? "RUN FOLDER CREATED NEW · NO OVERWRITE"
-    : "MOCK TARGET NAME · NO FILE CREATED";
+    ? "记录目录已创建 · 禁止覆盖"
+    : "模拟名称 · 未创建文件";
 }
 
 export function RunControlPanel({
@@ -97,7 +94,7 @@ export function RunControlPanel({
   recordingArmed,
   recording,
   recordingStopped,
-  durabilityProven,
+  runOutput,
   finalized,
   recoveryRequired,
   canConnect,
@@ -111,7 +108,6 @@ export function RunControlPanel({
   previewDeviceName,
   canStart,
   canStopRecording,
-  canFinalize,
   canRecover,
   canAcknowledgeFailed,
   onConnect,
@@ -122,7 +118,6 @@ export function RunControlPanel({
   onSetupMultiRecording,
   onStart,
   onStopRecording,
-  onFinalize,
   onRecover,
   onAcknowledgeFailed,
   onCollapse,
@@ -132,8 +127,13 @@ export function RunControlPanel({
   if (preflightPassed || recordingArmed || recording || recordingStopped || finalized) complete.add("setup");
   if (recordingArmed || recording || recordingStopped || finalized) complete.add("armed");
   if (recording || recordingStopped || finalized) complete.add("recording");
-  if (recordingStopped || finalized) complete.add("stopped");
-  if (finalized) complete.add("finalized");
+  if (runOutput.state === "nwb_saved") complete.add("saved");
+  const saving = ["stop_requested", "recording_stopped", "finalizing"].includes(phase);
+  const phaseTone = recoveryRequired || runOutput.state === "failed"
+    ? "fault"
+    : runOutput.state === "raw_retained"
+      ? "caution"
+      : recording ? "recording" : connected ? "ready" : "idle";
 
   return (
     <section className="run-control" aria-labelledby="run-control-title">
@@ -143,7 +143,7 @@ export function RunControlPanel({
           <h2 id="run-control-title">采集控制</h2>
         </div>
         <div className="instrument-section-heading__actions">
-          <span className={"phase-chip phase-chip--" + (recoveryRequired ? "fault" : recording ? "recording" : connected ? "ready" : "idle")}>
+          <span className={"phase-chip phase-chip--" + phaseTone}>
             {phaseLabel}
           </span>
           <button
@@ -151,7 +151,7 @@ export function RunControlPanel({
             type="button"
             aria-label="收起采集控制栏"
             aria-expanded={true}
-            title="收起控制栏；录制中仍保留停止记录动作"
+            title="收起控制栏；录制中仍保留结束并保存动作"
             onClick={onCollapse}
           >
             <PanelRightClose size={17} aria-hidden="true" />
@@ -169,7 +169,7 @@ export function RunControlPanel({
         <div>
           <span>MONITOR / PREVIEW SOURCE</span>
           <strong>{previewLabel(previewState)}</strong>
-          <small>启动后建立数据源并显示低速派生预览；不是 Recording，也不写文件。冻结显示只暂停 WebView 重绘。</small>
+          <small>显示实时低速派生预览；冻结只暂停显示。</small>
         </div>
         <button
           className="instrument-button instrument-button--preview"
@@ -199,7 +199,7 @@ export function RunControlPanel({
           title={reconnectPending
             ? "Run 仍由独立 daemon 持有；正在等待自动轮询恢复控制连接"
             : connected && !canDisconnect
-              ? "当前 Run 尚未结束；必须保留控制连接，才能 Stop、Finalize 或确认失败"
+              ? "当前 Run 尚未结束；必须保留控制连接，才能结束并保存或确认失败"
               : undefined}
           onClick={connected ? onDisconnect : onConnect}
         >
@@ -234,7 +234,7 @@ export function RunControlPanel({
           <div className="recording-target-readout" role="note">
             <span>{targetReadoutLabel(recordingTarget)}</span>
             <strong title={recordingTarget.resolvedRunDirectory}>{recordingTarget.resolvedRunDirectory}</strong>
-            <small>{recordingTarget.scope.toUpperCase()} · {recordingTarget.journalFileName}</small>
+            <small>{recordingTarget.scope === "mock" ? "SIMULATION · NO FILE" : "FINAL OUTPUT · NWB REQUIRED"}</small>
           </div>
         ) : null}
 
@@ -252,21 +252,20 @@ export function RunControlPanel({
           className="instrument-button instrument-button--stop"
           type="button"
           disabled={!canStopRecording || busy}
+          title="一次请求完成停止输入、排空，并生成、验证和发布最终 NWB"
           onClick={onStopRecording}
         >
           <CircleStop size={18} aria-hidden="true" />
-          停止记录
+          结束并保存
         </button>
 
-        <div className={"stop-safety-separator" + (recordingStopped && !finalized ? " is-active" : "")} role="note">
-          <strong>{recordingStopped
-            ? durabilityProven ? "记录输入已停止；文件封存回执已确认" : "记录输入已停止；Preview 可继续"
-            : "停止记录会请求停止输入；是否排空并封存只看后续回执"}</strong>
-          <span>{durabilityProven
-            ? "文件写入与封存证据已确认；仍需同时检查数据接收与采集范围。"
-            : finalized
-              ? "Run 状态已结束，但 durability / seal 证据不足时仍不能称为安全保存。"
-              : "当前不等于文件已安全保存；等待 adapter / daemon 的 durability 与 seal receipt。"}</span>
+        <div className={`stop-safety-separator${saving ? " is-active" : ""} is-${runOutput.state}`} role="note">
+          <strong>{saving ? "正在结束并生成 NWB" : runOutput.label}</strong>
+          <span>{saving
+            ? "Preview 可继续；最终 NWB 回执到达前不显示保存成功。"
+            : runOutput.state === "idle"
+              ? "结束记录时由 adapter / daemon 连续生成并验证 NWB，无需第二次操作。"
+              : runOutput.detail}</span>
         </div>
 
         {recoveryRequired && canAcknowledgeFailed ? (
@@ -299,17 +298,7 @@ export function RunControlPanel({
           <div className="recovery-action-unavailable" role="note">
             当前 snapshot 未提供可执行的 GUI 恢复命令；保留 partial journal，并等待 daemon 状态或人工检查。
           </div>
-        ) : (
-          <button
-            className="instrument-button instrument-button--finalize"
-            type="button"
-            disabled={!canFinalize || busy}
-            onClick={onFinalize}
-          >
-            <FileCheck2 size={17} aria-hidden="true" />
-            Finalize / 封存 Run
-          </button>
-        )}
+        ) : null}
       </div>
     </section>
   );

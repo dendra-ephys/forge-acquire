@@ -117,9 +117,11 @@ Raw acceptance requires the union of recorded ranges to equal the requested
 `[sample_start, sample_end)` exactly. A missing, duplicated, reordered, or
 mutated sample is a failed Run-integrity check, not a warning.
 
-If analysis is required by the Run plan, Finalize may succeed only when the
-durable analysis cursor covers the acquisition end. Backlog is visible and may
-be recovered from the journal; silently skipping a range is forbidden.
+If analysis is required by the Run plan, the governed downstream analysis receipt may succeed
+only when the durable analysis cursor covers the acquisition end. The operator-facing
+Recording action remains one `End and Save`; it completes raw Recording closure through
+stop, drain, durability, and journal seal without a second Finalize click. Backlog is visible
+and may be recovered from the journal; silently skipping a range is forbidden.
 
 The reference streaming detector and LFP accumulator therefore raise a latched
 coverage error when `observed_sample_start != expected_sample_start`. The error
@@ -135,7 +137,17 @@ number of missed spikes, and processing cannot resume until an explicit reset.
 | DHL/RTL simulation | framing, counters, aggregation, canonical builder | physical links, USB, populated boards |
 | Signal generator through Intan/Pod HIL | measured behavior for the exercised physical conditions | all electrodes, all biological signals, release readiness |
 
-The React/WebView side never receives continuous raw samples. It receives only
-bounded sampled-extrema previews (or future receipt-proven bucket aggregates),
-LFP summaries, spike raster subsets, waveform summaries, explicit coverage,
-and evidence identifiers derived from the same synthetic sample timeline.
+The React/WebView side never receives the continuous raw acquisition stream. It receives only
+bounded sampled-extrema previews (or future receipt-proven bucket aggregates), LFP summaries,
+spike raster subsets, and `spike_preview_v3` selected-channel event windows derived from the
+same synthetic sample timeline. Each v3 window contains every event-aligned waveform snippet
+whose center remains inside the declared source-sample TTL, plus statistics computed from that
+exact set, explicit coverage, and evidence identifiers.
+
+`全部波形` is the default display mode and draws all returned snippets in one Canvas pass as
+soon as the next bounded Preview frame arrives. `统计` draws mean/p10/p90 and `最新` draws the
+newest snippet without changing the retained event set. A snippet disappears when its center
+leaves the common 1/2/5 s `retentionSamples` window. The mock contract requires observed and
+returned counts to match; exceeding its fixed waveform capacity is a coverage fault rather
+than silent sampling. This software-oracle behavior does not qualify a production detector,
+Intan input, or hardware data path.

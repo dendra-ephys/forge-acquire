@@ -42,12 +42,14 @@ import {
   SYNTHETIC_DEFAULT_SEED,
   SYNTHETIC_PREVIEW_MICROVOLTS_PER_COUNT,
   SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES,
+  SYNTHETIC_SPIKE_TEMPLATE,
   SyntheticNeuralModel,
 } from "../core/syntheticNeural";
 
 const MOCK_ADAPTER_ID = "forge.acquire.mock.v1";
 const DEFAULT_TRANSITION_DELAY_MS = 12;
-const DEFAULT_PREVIEW_INTERVAL_MS = 250;
+const DEFAULT_PREVIEW_INTERVAL_MS = 50;
+const MAX_SELECTED_CHANNEL_WAVEFORMS = 128;
 
 export interface MockAcquireAdapterOptions {
   transitionDelayMs?: number;
@@ -93,6 +95,7 @@ function copyRunReceipt(receipt: RunReceipt | null): RunReceipt | null {
         ...receipt,
         evidence: copyEvidence(receipt.evidence),
         recordingTarget: { ...receipt.recordingTarget },
+        nwbArtifact: receipt.nwbArtifact === null ? null : { ...receipt.nwbArtifact },
         faults: receipt.faults.map(copyFault),
       };
 }
@@ -137,7 +140,7 @@ function copyPreviewFrame(frame: PreviewFrame): PreviewFrame {
     sourceGapRanges: frame.coverage.sourceGapRanges.map((range) => ({ ...range })),
     analysisGapRanges: frame.coverage.analysisGapRanges.map((range) => ({ ...range })),
   };
-  if (frame.encoding === "spike_preview_v2") {
+  if (frame.encoding === "spike_preview_v3") {
     return {
       ...frame,
       processing,
@@ -145,13 +148,20 @@ function copyPreviewFrame(frame: PreviewFrame): PreviewFrame {
       channelActivity: frame.channelActivity.map((channel) => ({ ...channel })),
       accounting: { ...frame.accounting },
       raster: frame.raster.map((event) => ({ ...event })),
-      selectedChannelWaveform: frame.selectedChannelWaveform === null
+      selectedChannelWaveforms: {
+        ...frame.selectedChannelWaveforms,
+        events: frame.selectedChannelWaveforms.events.map((event) => ({
+          ...event,
+          values: event.values.slice(),
+        })),
+      },
+      selectedChannelWaveformStats: frame.selectedChannelWaveformStats === null
         ? null
         : {
-            ...frame.selectedChannelWaveform,
-            meanValues: frame.selectedChannelWaveform.meanValues.slice(),
-            p10Values: frame.selectedChannelWaveform.p10Values.slice(),
-            p90Values: frame.selectedChannelWaveform.p90Values.slice(),
+            ...frame.selectedChannelWaveformStats,
+            meanValues: frame.selectedChannelWaveformStats.meanValues.slice(),
+            p10Values: frame.selectedChannelWaveformStats.p10Values.slice(),
+            p90Values: frame.selectedChannelWaveformStats.p90Values.slice(),
           },
     };
   }
@@ -227,6 +237,10 @@ class MockPreviewSource implements PreviewSource {
     return this.latest === null ? null : copyPreviewFrame(this.latest);
   }
 
+  refresh(): void {
+    if (this.active) this.emit(false);
+  }
+
   subscribe(listener: (frame: PreviewFrame) => void): Unsubscribe {
     this.listeners.add(listener);
     if (this.latest) listener(this.getLatest()!);
@@ -285,7 +299,8 @@ class MockPreviewSource implements PreviewSource {
     const base = {
       scope: "mock" as const,
       synthetic: true,
-      containsRawSamples: false as const,
+      containsContinuousRawSamples: false as const,
+      containsEventWaveformSnippets: this.request.signalKind === "spike",
       sequence: this.sequence,
       generatedAtMonotonicMs,
       runId: run.runId,
@@ -379,16 +394,39 @@ class MockPreviewSource implements PreviewSource {
         });
       }).sort((left, right) => left.eventOffsetMs - right.eventOffsetMs || left.channel - right.channel);
       const selectedActivity = channelActivity[this.request.selectedChannel];
-      const selectedChannelWaveform = selectedActivity && selectedActivity.observedEventCount > 0
+      const selectedCenters = selectedActivity
+          ? [...this.model.eventCentersInRange(
+            selectedActivity.channel,
+            base.sourceSampleStart,
+            base.sourceSampleEndExclusive,
+          )].filter((center) => center > base.sourceSampleStart
+            && center + BigInt(
+              SYNTHETIC_SPIKE_TEMPLATE.length - SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES,
+            ) <= base.sourceSampleEndExclusive)
+        : [];
+      const waveformCoverage = selectedCenters.length <= MAX_SELECTED_CHANNEL_WAVEFORMS
+        ? "complete" as const
+        : "fault" as const;
+      const returnedCenters = waveformCoverage === "complete"
+        ? selectedCenters
+        : selectedCenters.slice(-MAX_SELECTED_CHANNEL_WAVEFORMS);
+      const selectedChannelWaveformEvents = returnedCenters.map((center) => {
+        const values = this.model.waveformAtEvent(this.request.selectedChannel, center)
+          .map((value) => value * SYNTHETIC_PREVIEW_MICROVOLTS_PER_COUNT);
+        return {
+          eventId: `MOCK-SPIKE-${this.model.scenarioHash.slice(0, 12)}-${this.request.selectedChannel}-${center}`,
+          channel: this.request.selectedChannel,
+          centerSample: center,
+          snippetSampleStart: center - BigInt(SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES),
+          snippetSampleEndExclusive: center
+            + BigInt(values.length - SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES),
+          preTriggerSamples: SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES,
+          values,
+        };
+      });
+      const selectedChannelWaveformStats = selectedChannelWaveformEvents.length > 0
         ? (() => {
-            const centers = [...this.model.eventCentersInRange(
-              selectedActivity.channel,
-              base.sourceSampleStart,
-              base.sourceSampleEndExclusive,
-            )].slice(0, 64);
-            const waveforms = centers.map((center) => this.model
-              .waveformAtEvent(selectedActivity.channel, center)
-              .map((value) => value * SYNTHETIC_PREVIEW_MICROVOLTS_PER_COUNT));
+            const waveforms = selectedChannelWaveformEvents.map((event) => event.values);
             const pointCount = waveforms[0]?.length ?? 0;
             const meanValues = Array.from({ length: pointCount }, (_, point) => waveforms.reduce(
               (sum, waveform) => sum + (waveform[point] ?? 0),
@@ -400,11 +438,9 @@ class MockPreviewSource implements PreviewSource {
               return values[Math.floor((values.length - 1) * fraction)] ?? 0;
             };
             return {
-              channel: selectedActivity.channel,
+              channel: this.request.selectedChannel,
               thresholdValue: null,
-              observedEventCount: selectedActivity.observedEventCount,
               contributingWaveformCount: waveforms.length,
-              preTriggerSamples: SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES,
               meanValues,
               p10Values: meanValues.map((_, point) => percentile(point, 0.1)),
               p90Values: meanValues.map((_, point) => percentile(point, 0.9)),
@@ -413,14 +449,14 @@ class MockPreviewSource implements PreviewSource {
         : null;
       this.latest = {
         ...base,
-        encoding: "spike_preview_v2",
+        encoding: "spike_preview_v3",
         signalKind: "spike",
         sorting: "unsorted",
         processing: {
           status: "available",
           scope: "mock",
-          algorithmId: "forge.mock.synthetic-oracle-waveform-summary.v2",
-          summary: "Bounded raster and waveform aggregate derived from one integer synthetic source",
+          algorithmId: "mock.spike.v3",
+          summary: "Mock waveforms",
           sourceSampleRateHz: input.sampleRateHz,
           displaySampleRateHz: null,
           passbandHz: null,
@@ -446,8 +482,17 @@ class MockPreviewSource implements PreviewSource {
         },
         raster,
         selectedChannel: this.request.selectedChannel,
-        selectedChannelWaveform,
-        waveformUnavailableReasonCode: selectedChannelWaveform === null ? "NO_EVENTS_IN_WINDOW" : null,
+        selectedChannelWaveforms: {
+          retentionSamples: sourceSampleCount,
+          coverage: waveformCoverage,
+          reasonCode: waveformCoverage === "complete"
+            ? null
+            : "SELECTED_CHANNEL_WAVEFORM_WINDOW_CAPACITY_EXCEEDED",
+          observedEventCount: selectedCenters.length,
+          returnedEventCount: selectedChannelWaveformEvents.length,
+          events: selectedChannelWaveformEvents,
+        },
+        selectedChannelWaveformStats,
       };
     } else {
       const lfp = this.request.signalKind === "lfp";
@@ -882,8 +927,17 @@ export class MockAcquireAdapter implements AcquireAdapter {
       this.preview.setActive(false);
     } else {
       this.durabilityFailure = true;
-      this.setSlot("durability", "failed", message, null);
-      if (this.lifecycle === "finalizing") this.setLifecycle("recovery_required");
+      if (["recording_stopped", "finalizing"].includes(this.lifecycle)) {
+        this.setSlot("durability", "failed", message, null);
+        this.setLifecycle("recovery_required");
+      } else {
+        this.setSlot(
+          "durability",
+          this.lifecycle === "recording" ? "active" : "idle",
+          `${message}; fault injection armed for the next End and Save operation`,
+          null,
+        );
+      }
     }
     this.publish();
   }
@@ -932,7 +986,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
         if (!["connected_idle", "finalized"].includes(this.lifecycle)) {
           return {
             code: "ACTIVE_RUN_CONTROL_REQUIRED",
-            message: "当前 Run 尚未结束；必须保留控制连接，才能 Stop、Finalize 或确认失败",
+            message: "当前 Run 尚未结束；必须保留控制连接，才能执行结束并保存或确认失败",
           };
         }
         return null;
@@ -995,8 +1049,6 @@ export class MockAcquireAdapter implements AcquireAdapter {
           : { code: "INVALID_STATE", message: "Recording Arm 尚未由 snapshot 证明" };
       case "stop_recording":
         return this.lifecycle === "recording" ? null : { code: "INVALID_STATE", message: "当前没有 recording Run" };
-      case "finalize_run":
-        return this.lifecycle === "recording_stopped" ? null : { code: "INVALID_STATE", message: "Recording 尚未停止或已进入 finalization" };
       case "recover_run":
         return this.lifecycle === "recovery_required"
           && !this.durabilityFailure
@@ -1018,8 +1070,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
       case "arm_recording": return "arm_requested";
       case "start_recording": return "start_requested";
       case "stop_recording": return "stop_requested";
-      case "finalize_run": return "finalizing";
-      case "recover_run": return "recording_stopped";
+      case "recover_run": return "finalizing";
       case "acknowledge_failed_run": return "connected_idle";
     }
   }
@@ -1091,13 +1142,12 @@ export class MockAcquireAdapter implements AcquireAdapter {
       case "stop_recording":
         steps.push(() => this.setLifecycle("stop_requested"));
         steps.push(() => this.setLifecycle("recording_stopped"));
-        break;
-      case "finalize_run":
         steps.push(() => this.setLifecycle("finalizing"));
         steps.push(() => this.setLifecycle(this.durabilityFailure ? "recovery_required" : "finalized"));
         break;
       case "recover_run":
-        steps.push(() => this.setLifecycle("recording_stopped"));
+        steps.push(() => this.setLifecycle("finalizing"));
+        steps.push(() => this.setLifecycle(this.durabilityFailure ? "recovery_required" : "finalized"));
         break;
       case "acknowledge_failed_run":
         steps.push(() => this.resetFailedRunState());
@@ -1168,12 +1218,12 @@ export class MockAcquireAdapter implements AcquireAdapter {
       armed: ["idle", "Recording Arm acknowledged; acquisition has not started"],
       start_requested: ["pending", "Acquisition start requested"],
       recording: ["active", "Synthetic acquisition active"],
-      stop_requested: ["pending", "Recording Stop requested; Preview remains independent"],
-      recording_stopped: ["proven", "Recording input closed; durability still unproven"],
-      finalizing: ["proven", "Recording input closed; mock durability finalization pending"],
+      stop_requested: ["pending", "End and Save requested; Preview remains independent"],
+      recording_stopped: ["proven", "Recording input closed; draining before durability barrier"],
+      finalizing: ["proven", "Recording input closed; mock durability barrier and seal pending"],
       finalized: ["proven", "Mock acquisition evidence finalized"],
       recovery_required: [this.integrityFailed ? "failed" : "proven", this.integrityFailed
-        ? "Acquisition source coverage failed; normal Finalize is forbidden"
+        ? "Acquisition source coverage failed; End and Save cannot produce a valid seal"
         : "Acquisition stopped; recoverable durability failure"],
     };
     const [status, summary] = acquisition[next];
@@ -1198,6 +1248,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
       );
     }
     this.runReceiptSequence += this.runId === null ? 0n : 1n;
+    this.preview.refresh();
     this.publish();
   }
 
@@ -1265,7 +1316,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
       mock_acquisition: item("mock_acquisition", "available", "mock", "MOCK_ONLY", "Synthetic acquisition workflow only"),
       decimated_preview: item("decimated_preview", "available", "mock", "MOCK_SAMPLED_EXTREMA", "Synthetic sampled-extrema preview; not complete bucket min/max and no continuous raw samples"),
       lfp_preview: item("lfp_preview", "available", "mock", "MOCK_SYNTHETIC_COMPONENT", "Synthetic 8 Hz LFP truth-component sampled extrema; production LFP DSP is not connected"),
-      spike_preview: item("spike_preview", "available", "mock", "MOCK_SYNTHETIC_ORACLE", "Synthetic scheduled-event raster and waveform statistics; production spike detector is not connected"),
+      spike_preview: item("spike_preview", "available", "mock", "MOCK_SYNTHETIC_ORACLE", "Mock waveforms; detector unavailable"),
       fault_injection: item("fault_injection", "available", "mock", "MOCK_ONLY", "Mock-only fault controller"),
       ft601_direct: item("ft601_direct", "unavailable", "hardware", "NO_ADMISSION_RECEIPT", "FT601/D3XX hardware is unavailable"),
       aggregator_10gbe: item("aggregator_10gbe", "unavailable", "hardware", "API_NOT_FROZEN", "Aggregator discovery/control/stream is unavailable"),
@@ -1554,6 +1605,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
       generatedAtMonotonicMs: this.now(),
       evidence: copyEvidence(this.evidence),
       recordingTarget: { ...this.recordingTarget },
+      nwbArtifact: null,
       faults: this.faults.map(copyFault),
       evidenceHash: mockHash(this.runReceiptSequence + 1n, 181),
     };

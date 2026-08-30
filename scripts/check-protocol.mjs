@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const hostRoot = resolve(scriptDirectory, "..");
-const repositoryRoot = resolve(hostRoot, "..", "..");
-const repositoryPixiManifest = resolve(repositoryRoot, "pixi.toml");
+const repositoryRoot = hostRoot;
+const repositoryPixiManifest = resolve(hostRoot, "pixi.toml");
 const protocolRoot = resolve(hostRoot, "protocol");
 const rustManifest = resolve(protocolRoot, "rust", "Cargo.toml");
 const pythonPath = resolve(protocolRoot, "python");
@@ -43,16 +43,16 @@ try {
   run("pixi", [
     "run", "--manifest-path", repositoryPixiManifest,
     "python", "-m", "unittest", "discover",
-    "-s", "Forge/host_app/protocol/python/tests", "-v",
+    "-s", "protocol/python/tests", "-v",
   ]);
   run("pixi", [
     "run", "--manifest-path", repositoryPixiManifest,
     "g++", "-std=c++20", "-Wall", "-Wextra", "-Werror",
-    "-I", "Forge/host_app/protocol/cpp/include",
-    "Forge/host_app/protocol/cpp/tests/golden_test.cpp",
+    "-I", "protocol/cpp/include",
+    "protocol/cpp/tests/golden_test.cpp",
     "-o", verifier,
   ]);
-  run(verifier, ["Forge/host_app/protocol/golden"], {
+  run(verifier, ["protocol/golden"], {
     PATH: `C:\\Strawberry\\c\\bin;${environment.PATH ?? ""}`,
   });
 

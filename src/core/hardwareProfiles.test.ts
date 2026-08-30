@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import inventoryContract from "../../../headstage/firmware/component_inventory_profiles.json";
-import productMatrix from "../../../headstage/docs/headstage_product_matrix_v1.json";
+import inventoryContract from "../../contracts/headstage/firmware/component_inventory_profiles.json";
+import productMatrix from "../../contracts/headstage/docs/headstage_product_matrix_v1.json";
 import {
   HEADSTAGE_PROFILES,
   RECEIVER_POD_REV_A_CONTRACT,

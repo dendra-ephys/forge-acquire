@@ -301,8 +301,6 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
           this.publish();
           return receipt;
         }
-        case "finalize_run":
-          return await this.mockReceipt(intent, "原始 journal 的安全状态只取决于 daemon seal；此动作只关闭 GUI Run，不生成 NWB。");
         default:
           return await this.mockReceipt(intent);
       }
@@ -437,7 +435,7 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
   private async stopAndSeal(
     intent: Extract<AcquireIntent, { type: "stop_recording" }>,
   ): Promise<CommandReceipt> {
-    const daemon = await this.command(4);
+    const daemon = await this.command(4, false);
     if (!daemon.accepted || daemon.state !== "journal_sealed") {
       return this.reject(intent, "SEAL_NOT_PROVEN", "Stop 返回但 journal seal 尚未由 daemon 证明");
     }
@@ -500,7 +498,10 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
     };
   }
 
-  private async command(command: 1 | 2 | 3 | 4 | 5 | 7): Promise<DaemonSnapshotV1> {
+  private async command(
+    command: 1 | 2 | 3 | 4 | 5 | 7,
+    publishSnapshot = true,
+  ): Promise<DaemonSnapshotV1> {
     if (this.activeRun === null) throw new Error("software Run context is missing");
     const result = await sendSoftwareReplayRunCommand(
       this.activeRun.pipeName,
@@ -511,7 +512,7 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
     if (result.snapshot === null) throw new Error(result.reason);
     this.daemon = result.snapshot;
     this.pipeFault = null;
-    this.publish();
+    if (publishSnapshot) this.publish();
     return this.daemon;
   }
 
@@ -650,6 +651,7 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
       generatedAtMonotonicMs: now,
       evidence,
       recordingTarget,
+      nwbArtifact: null,
       faults,
       evidenceHash: evidenceHash ?? recordingTarget.evidenceHash,
     };

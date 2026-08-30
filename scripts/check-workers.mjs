@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const hostRoot = resolve(scriptDirectory, "..");
-const repositoryRoot = resolve(hostRoot, "..", "..");
-const repositoryPixiManifest = resolve(repositoryRoot, "pixi.toml");
+const repositoryRoot = hostRoot;
+const repositoryPixiManifest = resolve(hostRoot, "pixi.toml");
 const pythonPath = resolve(hostRoot, "workers", "python");
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "forge-worker-check-"));
 const executable = join(temporaryDirectory, "forge-worker-sdk-smoke.exe");
@@ -57,9 +57,9 @@ try {
     "g++", "-std=c++20", "-shared", "-static-libgcc", "-static-libstdc++",
     "-Wall", "-Wextra", "-Werror",
     "-I", pythonConfig.include,
-    "-I", "Forge/host_app/protocol/cpp/include",
-    "-I", "Forge/host_app/workers/cpp/include",
-    "Forge/host_app/workers/python_native/forge_analysis_native.cpp",
+    "-I", "protocol/cpp/include",
+    "-I", "workers/cpp/include",
+    "workers/python_native/forge_analysis_native.cpp",
     "-L", join(pythonConfig.prefix, "libs"), "-lpython311",
     "-o", nativeExtension,
   ]);
@@ -76,13 +76,13 @@ try {
   run("pixi", [
     "run", "--manifest-path", repositoryPixiManifest,
     "cargo", "run", "--quiet", "--locked",
-    "--manifest-path", "Forge/host_app/recording-daemon/Cargo.toml", "--",
+    "--manifest-path", "recording-daemon/Cargo.toml", "--",
     "analysis-ring-fixture", "--output", ringFixture,
   ]);
   run("pixi", [
     "run", "--manifest-path", repositoryPixiManifest,
     "python", "-m", "unittest", "discover",
-    "-s", "Forge/host_app/workers/tests", "-v",
+    "-s", "workers/tests", "-v",
   ], {
     FORGE_ANALYSIS_RING_FIXTURE: ringFixture,
     PYTHONPATH: workerPythonPath,
@@ -94,15 +94,15 @@ try {
   run("pixi", [
     "run", "--manifest-path", repositoryPixiManifest,
     "g++", "-std=c++20", "-Wall", "-Wextra", "-Werror",
-    "-I", "Forge/host_app/protocol/cpp/include",
-    "-I", "Forge/host_app/workers/cpp/include",
-    "Forge/host_app/workers/cpp/tests/sdk_smoke.cpp",
+    "-I", "protocol/cpp/include",
+    "-I", "workers/cpp/include",
+    "workers/cpp/tests/sdk_smoke.cpp",
     "-o", executable,
   ]);
   run(executable, [
-    "Forge/host_app/protocol/golden/canonical_record_envelope_v1.hex",
-    "Forge/host_app/protocol/golden/stim_intent_v1.hex",
-    "Forge/host_app/workers/golden/nwb_generation_validation_receipt_v1.hex",
+    "protocol/golden/canonical_record_envelope_v1.hex",
+    "protocol/golden/stim_intent_v1.hex",
+    "workers/golden/nwb_generation_validation_receipt_v1.hex",
     ringFixture,
   ], {
     PATH: `C:\\Strawberry\\c\\bin;${environment.PATH ?? ""}`,

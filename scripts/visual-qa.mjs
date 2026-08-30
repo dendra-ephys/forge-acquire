@@ -93,6 +93,15 @@ try {
   if ((await page.getByText("NO RUN", { exact: true }).count()) === 0) {
     throw new Error("Preview-before-Record should not create a Run");
   }
+  const idleIntegrityRail = page.locator(".integrity-rail");
+  if ((await idleIntegrityRail.getAttribute("data-run-result-state")) !== "idle"
+      || (await idleIntegrityRail.locator("[data-operator-slot], [data-integrity-slot], [data-evidence-group]").count()) !== 0
+      || (await idleIntegrityRail.locator('[aria-controls="integrity-technical-details"]').count()) !== 0) {
+    throw new Error("No-Run footer is not one quiet Run result");
+  }
+  if ((await idleIntegrityRail.getByText("Preview 不创建 Run，也不会写入记录文件", { exact: true }).count()) !== 0) {
+    throw new Error("No-Run recording status repeats an internal Preview contract");
+  }
   await screenshot("02-preview-before-record.png");
 
   const directRow = page.locator('[data-pod-key="MOCK-DIRECT-01"]');
@@ -121,13 +130,73 @@ try {
   const spikeCanvas = page.locator('[data-testid="spike-raster-waveform"]');
   const spikeSummary = page.locator('[data-testid="spike-event-summary"]');
   await spikeCanvas.waitFor();
+  const allWaveforms = page.getByRole("radio", { name: "全部", exact: true });
+  const waveformStatistics = page.getByRole("radio", { name: "统计", exact: true });
+  const latestWaveform = page.getByRole("radio", { name: "最新", exact: true });
+  for (const [locator, label] of [
+    [allWaveforms, "All Waveforms"],
+    [waveformStatistics, "Waveform Statistics"],
+    [latestWaveform, "Latest Waveform"],
+  ]) {
+    await requireMinimumTarget(locator, label);
+  }
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('[data-testid="spike-raster-waveform"]');
+    const observed = Number(canvas?.getAttribute("data-waveforms-observed"));
+    const rendered = Number(canvas?.getAttribute("data-waveforms-rendered"));
+    const omitted = Number(canvas?.getAttribute("data-waveforms-omitted"));
+    const retentionSamples = Number(canvas?.getAttribute("data-waveform-retention-samples"));
+    const sourceSampleSpan = Number(canvas?.getAttribute("data-source-sample-span"));
+    return canvas?.getAttribute("data-waveform-mode") === "all"
+      && canvas?.getAttribute("data-waveform-coverage") === "complete"
+      && observed > 0
+      && rendered === observed
+      && omitted === 0
+      && retentionSamples > 0
+      && retentionSamples === sourceSampleSpan;
+  });
+  if ((await allWaveforms.getAttribute("aria-checked")) !== "true") {
+    throw new Error("Selected-channel Spike view must default to All Waveforms");
+  }
+
+  await waveformStatistics.click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('[data-testid="spike-raster-waveform"]');
+    return canvas?.getAttribute("data-waveform-mode") === "statistics"
+      && canvas?.getAttribute("data-waveforms-rendered") === "1"
+      && canvas?.getAttribute("data-waveforms-omitted") === "0";
+  });
+  await latestWaveform.click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('[data-testid="spike-raster-waveform"]');
+    return canvas?.getAttribute("data-waveform-mode") === "latest"
+      && canvas?.getAttribute("data-waveforms-rendered") === "1"
+      && canvas?.getAttribute("data-waveforms-omitted") === "0";
+  });
+  await allWaveforms.click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('[data-testid="spike-raster-waveform"]');
+    return canvas?.getAttribute("data-waveform-mode") === "all"
+      && canvas?.getAttribute("data-waveforms-observed") === canvas?.getAttribute("data-waveforms-rendered");
+  });
+
+  await page.getByRole("button", { name: "每条 waveform 保留 2 秒", exact: true }).click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('[data-testid="spike-raster-waveform"]');
+    return canvas?.getAttribute("data-window-seconds") === "2"
+      && canvas?.getAttribute("data-waveform-retention-samples") === canvas?.getAttribute("data-source-sample-span")
+      && Number(canvas?.getAttribute("data-waveform-retention-samples")) > 0;
+  });
+  await page.getByRole("button", { name: "每条 waveform 保留 1 秒", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="spike-raster-waveform"]')
+    ?.getAttribute("data-window-seconds") === "1");
   const bankEvents = Number(await spikeSummary.getAttribute("data-bank-events"));
   const renderedEvents = Number(await spikeSummary.getAttribute("data-rendered"));
   const omittedEvents = Number(await spikeSummary.getAttribute("data-preview-omitted"));
   if (bankEvents !== renderedEvents + omittedEvents || renderedEvents > 64) {
     throw new Error("Bounded Spike preview accounting is inconsistent");
   }
-  for (const label of ["POD EVENTS", "BANK EVENTS", "RASTER DRAWN", "DISPLAY OMITTED", "SOURCE COVERAGE", "ANALYSIS COVERAGE"]) {
+  for (const label of ["POD EVENTS", "BANK EVENTS", "RASTER DRAWN", "DISPLAY OMITTED", "SOURCE COVERAGE", "DETECTOR COVERAGE"]) {
     await page.getByText(label, { exact: true }).waitFor();
   }
 
@@ -180,6 +249,11 @@ try {
   }
   const directoryInput = setupDialog.getByLabel("保存位置 · Run 根目录");
   const runNameInput = setupDialog.getByLabel("Run 名称前缀");
+  const directoryPicker = setupDialog.getByRole("button", { name: "浏览文件夹…", exact: true });
+  await requireMinimumTarget(directoryPicker, "Run directory picker");
+  if (await directoryPicker.isEnabled()) {
+    throw new Error("Browser mock unexpectedly enabled the desktop Run directory browser");
+  }
   await directoryInput.fill("F:\\ForgeRuns");
   await runNameInput.fill("CORTEX-SESSION");
   const recordDeviceOptions = setupDialog.locator('input[type="checkbox"]');
@@ -193,13 +267,49 @@ try {
   if ((await setupDialog.locator('input[type="checkbox"]:checked').count()) !== 4) {
     throw new Error("Multi-device setup did not preserve four explicit operator selections");
   }
+  const operatorConclusions = setupDialog.locator("[data-preflight-conclusion]");
+  if ((await operatorConclusions.count()) !== 4) {
+    throw new Error("Recording setup must expose exactly four operator conclusions");
+  }
+  for (let index = 0; index < 4; index += 1) {
+    if (!(await operatorConclusions.nth(index).isVisible())) {
+      throw new Error(`Operator conclusion ${index + 1} is not visible`);
+    }
+  }
+  const technicalDetails = setupDialog.locator("details.preflight-technical-details");
+  const technicalSummary = technicalDetails.locator("summary");
+  await requireMinimumTarget(technicalSummary, "Preflight technical-details disclosure");
+  if (await technicalDetails.evaluate((element) => element.open)) {
+    throw new Error("Preflight technical details must be collapsed by default");
+  }
+  if (await setupDialog.locator(".preflight-check").first().isVisible()) {
+    throw new Error("Engineering checks are visible in the default operator view");
+  }
   await setupDialog.getByRole("button", { name: "检查并分配记录目标" }).click();
-  await setupDialog.getByText("MOCK NAME ALLOCATED · NO FILE CREATED", { exact: true }).waitFor();
-  await setupDialog.getByText(/CORTEX-SESSION-001/).first().waitFor();
-  await setupDialog.getByText(/Recording Arm 只是 writer 写入互锁，不是刺激授权/).waitFor();
-  await setupDialog.getByRole("button", { name: "准备开始记录" }).waitFor();
+  const saveConclusion = setupDialog.locator('[data-preflight-conclusion="save-location"][data-allocation-state="simulated"]');
+  await saveConclusion.waitFor();
+  if (!(await saveConclusion.locator("strong").innerText()).includes("CORTEX-SESSION-001")) {
+    throw new Error("Operator save-location conclusion did not expose the allocated Run name");
+  }
+  await setupDialog.locator('[data-preflight-conclusion="readiness"][data-state="ready"]').waitFor();
+  if (await technicalDetails.evaluate((element) => element.open)) {
+    throw new Error("Preflight completion unexpectedly expanded technical details");
+  }
+  await technicalSummary.focus();
+  await page.keyboard.press("Enter");
+  if (!(await technicalDetails.evaluate((element) => element.open))) {
+    throw new Error("Technical details did not open from the keyboard");
+  }
+  await setupDialog.getByText("仅分配模拟名称 · 未创建文件", { exact: true }).waitFor();
+  await page.keyboard.press("Enter");
+  if (await technicalDetails.evaluate((element) => element.open)) {
+    throw new Error("Technical details did not close from the keyboard");
+  }
+  const armRecording = setupDialog.getByRole("button", { name: "准备开始记录" });
+  await armRecording.waitFor();
+  await armRecording.focus();
   await screenshot("04-recording-target-preflight.png");
-  await setupDialog.getByRole("button", { name: "准备开始记录" }).click();
+  await armRecording.click();
   await setupDialog.waitFor({ state: "hidden" });
   await waitForPhase("READY TO RECORD");
   await assertNoAcquisitionStimulationControls("record ready");
@@ -234,19 +344,22 @@ try {
   const baselineWorkbench = await page.locator(".signal-workbench").boundingBox();
   await page.getByRole("button", { name: "进入信号聚焦" }).click();
   await page.waitForFunction(() => document.querySelector(".app-shell")?.getAttribute("data-signal-focus") === "true");
-  for (const selector of [".pod-rack", ".control-stack", ".diagnostic-region", ".integrity-rail"]) {
+  for (const selector of [".pod-rack", ".control-stack", ".diagnostic-region"]) {
     if ((await page.locator(selector).getAttribute("data-collapsed")) !== "true") {
       throw new Error(`${selector} did not collapse in signal focus`);
     }
   }
+  await page.evaluate(() => new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame))));
   const focusedWorkbench = await page.locator(".signal-workbench").boundingBox();
+  const baselineArea = baselineWorkbench ? baselineWorkbench.width * baselineWorkbench.height : 0;
+  const focusedArea = focusedWorkbench ? focusedWorkbench.width * focusedWorkbench.height : 0;
   if (!baselineWorkbench || !focusedWorkbench
-    || focusedWorkbench.width * focusedWorkbench.height < baselineWorkbench.width * baselineWorkbench.height * 1.45) {
-    throw new Error("Signal Focus did not materially enlarge the data surface");
+    || focusedArea < baselineArea * 1.45) {
+    throw new Error(`Signal Focus area ${focusedArea} did not exceed baseline ${baselineArea} by 1.45x`);
   }
-  const compactStop = page.getByRole("button", { name: "停止记录", exact: true });
-  await requireMinimumTarget(compactStop, "Compact Stop Recording");
-  if (!(await compactStop.isEnabled())) throw new Error("Compact Stop Recording is disabled while recording");
+  const compactEndAndSave = page.getByRole("button", { name: "结束并保存", exact: true });
+  await requireMinimumTarget(compactEndAndSave, "Compact End and Save");
+  if (!(await compactEndAndSave.isEnabled())) throw new Error("Compact End and Save is disabled while recording");
   if ((await page.locator(".control-rail__stim").count()) !== 0) {
     throw new Error("Collapsed acquisition controls still contain stimulation controls");
   }
@@ -254,73 +367,42 @@ try {
 
   await page.getByRole("button", { name: "退出信号聚焦" }).click();
   await page.setViewportSize({ width: 1440, height: 920 });
-  const sequenceBeforeStop = await spikeCanvas.getAttribute("data-frame-sequence");
-  await page.getByRole("button", { name: "停止记录", exact: true }).click();
-  await waitForPhase("RECORDING STOPPED");
+  const sequenceBeforeEndAndSave = await spikeCanvas.getAttribute("data-frame-sequence");
+  await page.getByRole("button", { name: "结束并保存", exact: true }).click();
+  await waitForPhase("SIMULATION COMPLETE");
   await page.getByText("LIVE PREVIEW", { exact: true }).waitFor();
   await page.waitForFunction(
     (sequence) => document.querySelector('[data-testid="spike-raster-waveform"]')
       ?.getAttribute("data-frame-sequence") !== sequence,
-    sequenceBeforeStop,
+    sequenceBeforeEndAndSave,
   );
-  await page.getByText("记录输入已停止；Preview 可继续", { exact: true }).waitFor();
-  await page.getByText("已停止 · 尚未安全封存", { exact: true }).waitFor();
-  await screenshot("07-recording-stopped-preview-continues.png");
-
-  const finalizeButton = page.getByRole("button", { name: "Finalize / 封存 Run", exact: true });
-  await requireMinimumTarget(finalizeButton, "Finalize");
-  const sequenceBeforeFinalize = await spikeCanvas.getAttribute("data-frame-sequence");
-  await finalizeButton.click();
-  await waitForPhase("FINALIZED");
-  await page.getByText("LIVE PREVIEW", { exact: true }).waitFor();
-  await page.waitForFunction(
-    (sequence) => document.querySelector('[data-testid="spike-raster-waveform"]')
-      ?.getAttribute("data-frame-sequence") !== sequence,
-    sequenceBeforeFinalize,
-  );
+  if ((await page.getByRole("button", { name: /Finalize|封存 Run/i }).count()) !== 0) {
+    throw new Error("Recording controls still expose a second Finalize action");
+  }
   await assertNoAcquisitionStimulationControls("finalized");
-  await page.getByText("模拟封存完成", { exact: true }).waitFor();
-  await page.getByText("未创建真实文件；仅验证界面与回执流程", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "展开记录保存状态" }).click();
-  for (const group of ["recording-core", "optional-results"]) {
-    const groupLocator = page.locator(`[data-evidence-group="${group}"]`);
-    if ((await groupLocator.count()) !== 1) throw new Error(`Evidence group ${group} is missing or duplicated`);
+  await page.getByText("模拟流程完成", { exact: true }).first().waitFor();
+  await page.getByText("未创建记录文件，也未生成 NWB。", { exact: true }).first().waitFor();
+  const integrityRail = page.locator(".integrity-rail");
+  const compactRailBox = await integrityRail.boundingBox();
+  if (!compactRailBox || compactRailBox.height < 44 || compactRailBox.height > 53) {
+    throw new Error(`Single Run result is ${compactRailBox?.height ?? "missing"}px high`);
   }
-  for (const slot of ["acquisition", "durability", "nwb", "analysis", "stimReceipt"]) {
-    if ((await page.locator(`[data-integrity-slot="${slot}"]`).count()) !== 1) {
-      throw new Error(`Evidence slot ${slot} is missing or duplicated`);
-    }
+  if ((await integrityRail.getAttribute("data-run-result-state")) !== "mock_complete"
+      || (await integrityRail.locator("[data-operator-slot], [data-integrity-slot], [data-evidence-group]").count()) !== 0
+      || (await integrityRail.locator('[aria-controls="integrity-technical-details"]').count()) !== 0) {
+    throw new Error("Final mock footer is not one simulation-only Run result");
   }
-  const expectedMembership = {
-    "recording-core": ["acquisition", "durability"],
-    "optional-results": ["nwb", "analysis", "stimReceipt"],
-  };
-  for (const [group, slots] of Object.entries(expectedMembership)) {
-    const groupLocator = page.locator(`[data-evidence-group="${group}"]`);
-    const actual = await groupLocator.locator("[data-integrity-slot]").evaluateAll((elements) =>
-      elements.map((element) => element.getAttribute("data-integrity-slot")));
-    if (JSON.stringify(actual) !== JSON.stringify(slots)) {
-      throw new Error(`Evidence group ${group} has ${JSON.stringify(actual)}, expected ${JSON.stringify(slots)}`);
-    }
+  const forbiddenResultCopy = /数据连续性|文件保存|Run 回执与输出|TECHNICAL DETAILS|外部事件|seq\s|模拟结束并保存完成|记录已结束并保存|ENDED \/ SAVED/;
+  if (forbiddenResultCopy.test(await integrityRail.innerText())) {
+    throw new Error("Removed evidence UI or false saved copy remains in the Run result");
   }
-  await page.getByText(/停止记录 ≠ 保存完成；只有“数据接收与采集范围”和“文件写入与封存”都确认/).waitFor();
-  await page.getByText("这 5 项用来回答两个不同问题", { exact: true }).waitFor();
-  await page.getByText("外部事件时间线", { exact: true }).waitFor();
-  if ((await page.getByText("Stim Receipt", { exact: true }).count()) !== 0) {
-    throw new Error("Recording status still presents an ambiguous Stim Receipt lane");
-  }
-  await screenshot("08-finalized-grouped-run-evidence.png");
+  await screenshot("07-simulation-complete-preview-continues.png");
 
   await page.setViewportSize({ width: 1080, height: 720 });
   if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) {
-    throw new Error("Expanded Run evidence causes horizontal overflow at 1080x720");
+    throw new Error("Single Run result causes horizontal overflow at 1080x720");
   }
-  const rawGroup = await page.locator('[data-evidence-group="recording-core"]').boundingBox();
-  const optionalGroup = await page.locator('[data-evidence-group="optional-results"]').boundingBox();
-  if (!rawGroup || !optionalGroup || rawGroup.width < optionalGroup.width * 0.6) {
-    throw new Error("The two mandatory raw-recording checks became unreadably narrow beside the three optional receipts");
-  }
-  await screenshot("09-finalized-evidence-1080x720.png");
+  await screenshot("08-single-run-result-1080x720.png");
 
   if (errors.length > 0) throw new Error(errors.join("\n"));
   console.log("visual QA passed; screenshots:", outputDirectory);

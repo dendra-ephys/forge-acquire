@@ -9,7 +9,18 @@ if (!Number.isSafeInteger(recordHoldMs) || recordHoldMs < 0 || recordHoldMs > 12
   throw new Error("FORGE_E2E_RECORD_HOLD_MS must be an integer from 0 through 120000");
 }
 
-const browser = await chromium.connectOverCDP(cdpUrl);
+async function resolveCdpEndpoint(value) {
+  if (value.startsWith("ws://") || value.startsWith("wss://")) return value;
+  const response = await fetch(`${value.replace(/\/$/, "")}/json/version`);
+  if (!response.ok) throw new Error(`Tauri DevTools metadata returned HTTP ${response.status}`);
+  const metadata = await response.json();
+  if (typeof metadata.webSocketDebuggerUrl !== "string") {
+    throw new Error("Tauri DevTools metadata has no WebSocket endpoint");
+  }
+  return metadata.webSocketDebuggerUrl;
+}
+
+const browser = await chromium.connectOverCDP(await resolveCdpEndpoint(cdpUrl));
 const context = browser.contexts()[0];
 if (!context) throw new Error("Tauri WebView CDP context is unavailable");
 const page = context.pages().find((candidate) => candidate.url().includes("127.0.0.1:1421"))
@@ -50,10 +61,55 @@ async function recordAndSeal(mode, deviceCount, prefix) {
   const setupLabel = mode === "single" ? "单设备记录…" : "多设备记录…";
   const dialogLabel = mode === "single" ? "单设备记录设置" : "多设备记录设置";
   await page.getByRole("button", { name: setupLabel, exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: dialogLabel });
+  const dialog = page.getByTestId("recording-setup-dialog");
   await dialog.waitFor();
-  await dialog.getByLabel("保存位置 · Run 根目录").fill(runRoot);
+  await dialog.getByRole("heading", { name: dialogLabel, exact: true }).waitFor();
+  const directoryPicker = dialog.getByRole("button", { name: "浏览文件夹…", exact: true });
+  if (!(await directoryPicker.isEnabled())) {
+    throw new Error("desktop recording setup did not enable the Run directory browser");
+  }
+  await directoryPicker.click();
+  const directoryBrowser = dialog.getByTestId("run-directory-browser");
+  await directoryBrowser.waitFor();
+  await page.keyboard.press("Escape");
+  await directoryBrowser.waitFor({ state: "hidden" });
+  await dialog.getByRole("heading", { name: dialogLabel, exact: true }).waitFor();
+  if (!(await directoryPicker.evaluate((element) => element === document.activeElement))) {
+    throw new Error("closing the Run directory browser did not restore focus to its opener");
+  }
+
+  await directoryPicker.click();
+  await directoryBrowser.waitFor();
+  const pathInput = dialog.getByLabel("文件夹路径", { exact: true });
+  await pathInput.fill(runRoot);
+  await dialog.getByRole("button", { name: "转到", exact: true }).click();
+  await page.waitForFunction((expected) => {
+    const element = document.querySelector('[data-testid="run-directory-current-path"]');
+    const actual = element?.getAttribute("data-current-path") ?? "";
+    const normalize = (value) => value.replace(/[\\/]+$/, "").toLocaleLowerCase();
+    return normalize(actual) === normalize(expected);
+  }, runRoot);
+  await dialog.getByRole("button", { name: "使用当前文件夹", exact: true }).click();
+  await directoryBrowser.waitFor({ state: "hidden" });
+  const selectedRoot = await dialog.getByLabel("保存位置 · Run 根目录").inputValue();
+  const normalizeRoot = (value) => value.replace(/[\\/]+$/, "").toLocaleLowerCase();
+  if (normalizeRoot(selectedRoot) !== normalizeRoot(runRoot)) {
+    throw new Error(`Run directory confirmation returned ${selectedRoot}, expected ${runRoot}`);
+  }
   await dialog.getByLabel("Run 名称前缀").fill(prefix);
+
+  const nwbBlocked = dialog.locator('[data-preflight-conclusion="final-output"][data-state="unavailable"]');
+  if (await nwbBlocked.isVisible().catch(() => false)) {
+    const preflight = dialog.getByRole("button", { name: "检查并分配记录目标" });
+    if (await preflight.isEnabled()) {
+      throw new Error("formal software recording is enabled without an NWB materializer capability");
+    }
+    await dialog.locator('[data-root-cause="nwb-output-unavailable"]').waitFor();
+    await dialog.getByText("当前不能开始正式记录", { exact: true }).waitFor();
+    await dialog.getByRole("button", { name: "关闭", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    return { blocked: true, resolvedRunDirectory: null };
+  }
 
   if (mode === "single") {
     if ((await dialog.locator('input[type="radio"]:checked').count()) !== 1) {
@@ -68,9 +124,9 @@ async function recordAndSeal(mode, deviceCount, prefix) {
   }
 
   await dialog.getByRole("button", { name: "检查并分配记录目标" }).click();
-  await dialog.getByText("TARGET CREATED NEW · NO OVERWRITE", { exact: true })
-    .waitFor({ timeout: 15_000 });
-  const resolvedRunDirectory = await dialog.locator(".recording-reservation strong").innerText();
+  const saveConclusion = dialog.locator('[data-preflight-conclusion="save-location"][data-allocation-state="created_new"]');
+  await saveConclusion.waitFor({ timeout: 15_000 });
+  const resolvedRunDirectory = await saveConclusion.locator("strong").innerText();
   await dialog.getByRole("button", { name: "准备开始记录" }).click();
   await dialog.waitFor({ state: "hidden", timeout: 15_000 });
   await waitForPhase("READY TO RECORD");
@@ -84,29 +140,30 @@ async function recordAndSeal(mode, deviceCount, prefix) {
     await waitForPhase("RECORDING");
   }
   await page.waitForTimeout(recordHoldMs);
-  await page.getByRole("button", { name: "停止记录", exact: true }).click();
-  await page.locator('[data-recording-save-state="sealed"]').waitFor({ timeout: 30_000 });
-  await page.getByText("原始记录已安全封存", { exact: true }).waitFor();
-
-  await expandControlRail();
-  await waitForPhase("RECORDING STOPPED");
-  await page.getByRole("button", { name: "Finalize / 封存 Run", exact: true }).click();
-  await waitForPhase("FINALIZED");
-  return resolvedRunDirectory.trim();
+  await page.getByRole("button", { name: "结束并保存", exact: true }).click();
+  await page.locator('[data-run-result-state="nwb_saved"]').waitFor({ timeout: 30_000 });
+  await page.getByText("NWB 已保存", { exact: true }).first().waitFor();
+  await waitForPhase("NWB SAVED");
+  await page.getByText("LIVE PREVIEW", { exact: true }).waitFor({ timeout: 15_000 });
+  if ((await page.getByRole("button", { name: /Finalize|封存 Run/i }).count()) !== 0) {
+    throw new Error("software flow still exposes a second Finalize action");
+  }
+  return { blocked: false, resolvedRunDirectory: resolvedRunDirectory.trim() };
 }
 
 try {
   await ensureConnectedPreview();
-  const singleRunDirectory = await recordAndSeal("single", 1, singlePrefix);
-  const multiRunDirectory = await recordAndSeal("multi", 2, multiPrefix);
+  const single = await recordAndSeal("single", 1, singlePrefix);
+  const multi = single.blocked ? null : await recordAndSeal("multi", 2, multiPrefix);
   if (errors.length) throw new Error(errors.join("\n"));
   process.stdout.write(`${JSON.stringify({
     adapter: "software",
     source: "deterministic_synthetic_canonical_sample_block",
+    finalNwbAdmission: single.blocked ? "blocked_no_nwb_materializer" : "available",
     recordHoldMs,
-    previewRestartedDuringSingleRecording: true,
-    singleRunDirectory,
-    multiRunDirectory,
+    previewRestartedDuringSingleRecording: !single.blocked,
+    singleRunDirectory: single.resolvedRunDirectory,
+    multiRunDirectory: multi?.resolvedRunDirectory ?? null,
   })}\n`);
 } finally {
   await browser.close();

@@ -1,13 +1,33 @@
-# Dendra Forge Host Application
+# Forge Acquire
 
-Private product repository exported from `dendra-ephys/dendra-forge`.
+Forge Acquire is the private desktop acquisition, recording, replay, and analysis
+application for the Dendra Forge neural-recording system.
 
-Host acquisition, recording, replay and analysis software product.
+The operator flow keeps Preview separate from Recording. Recording setup exposes the
+Run root and name, forbids overwriting an existing target, and requires adapter-authored
+preflight and arm receipts. The embedded Run-directory browser is a bounded desktop
+filesystem view; browsing alone does not create a Run or prove storage readiness.
 
-## Repository contract
+## Run and validate
 
-This repository contains product-owned source, design libraries, documentation, evidence and build inputs. Tool caches and regenerable build directories are excluded. A compiled FPGA image is a release artifact only after its source commit, constraints, tool version, STA result and SHA-256 are recorded.
+```powershell
+pixi run install
+pixi run dev
+pixi run check-all
+```
 
-## Release boundary
+The exact-version NWB profile is a separate gate:
 
-Presence in this private repository does not claim fabrication, timing, SI/PI, EMC, HIL or product-release qualification. Review the product evidence and open gates.
+```powershell
+pixi run -e nwb test-nwb
+```
+
+## Product boundary
+
+The simulator and protected software-replay paths are implemented. Direct hardware and
+Aggregator adapters remain unavailable until their independent deployment, transport,
+and HIL evidence gates pass. A successful software test, bundle, or mock receipt is not
+evidence that native acquisition files were produced by qualified hardware.
+
+See `REPOSITORY_CONTRACT.md` for repository provenance and release semantics, and the
+documents under `docs/` for the detailed architecture and open qualification gates.

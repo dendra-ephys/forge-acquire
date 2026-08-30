@@ -6,6 +6,7 @@ const FOCUSABLE = [
   "textarea:not([disabled])",
   "select:not([disabled])",
   "a[href]",
+  "summary",
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 

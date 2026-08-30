@@ -217,10 +217,10 @@ describe("SoftwareAcquireAdapter", () => {
     expect(stop.message).toContain("durability barrier");
     rejectLatePoll?.(new Error("expected pipe close after terminal FACK"));
     await Promise.resolve();
-    await settle(2);
+    await settle(4);
     snapshot = await adapter.readSnapshot();
     expect(snapshot).toMatchObject({
-      lifecycle: "recording_stopped",
+      lifecycle: "finalized",
       previewState: "live",
       evidence: {
         acquisition: { status: "proven", scope: "software" },
@@ -229,8 +229,15 @@ describe("SoftwareAcquireAdapter", () => {
         analysis: { status: "unavailable" },
         stimReceipt: { status: "unavailable" },
       },
-      runReceipt: { status: "raw_sealed", scope: "software" },
+      runReceipt: { status: "raw_sealed", lifecycle: "finalized", scope: "software" },
     });
+    expect(adapter.previewSource.getLatest()).toMatchObject({ runId: null, runEpoch: null });
+    expect(software.sendSoftwareReplayRunCommand).toHaveBeenCalledWith(
+      expect.any(String),
+      4,
+      expect.any(Object),
+      expect.any(Number),
+    );
   });
 
   it("does not create a Run directory for an invalid multi-device plan", async () => {

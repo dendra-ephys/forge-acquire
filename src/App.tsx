@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -37,19 +37,22 @@ import type {
   PreviewSignalKind,
 } from "./adapters/acquireAdapter";
 import { createAcquireRuntime } from "./adapters/acquireRuntime";
+import type { RunDirectoryBrowser, RunDirectoryListing } from "./adapters/runDirectoryBrowser";
 import { FaultRecoveryPanel, type FaultOption } from "./components/FaultRecoveryPanel";
 import { HardwareStatusCard } from "./components/HardwareStatusCard";
 import { LiveTraceSurface, type ChannelDisplayStats } from "./components/LiveTraceSurface";
 import { DeviceNameDialog } from "./components/DeviceNameDialog";
 import { PodRack } from "./components/PodRack";
-import {
-  PreflightDialog,
-  type PreflightCheck,
-  type RecordingSetupMode,
-} from "./components/PreflightDialog";
+import type { PreflightCheck, RecordingSetupMode } from "./components/PreflightDialog";
 import { RunControlPanel } from "./components/RunControlPanel";
 import { RunIntegrityRail } from "./components/RunIntegrityRail";
 import { SignalViewTabs, type SignalViewOption } from "./components/SignalViewTabs";
+import { deriveRunOutput } from "./core/runOutputState";
+
+const PreflightDialog = lazy(async () => {
+  const module = await import("./components/PreflightDialog");
+  return { default: module.PreflightDialog };
+});
 
 const PHASE_COPY: Record<AcquireLifecycleState, { label: string; detail: string }> = {
   disconnected: {
@@ -85,20 +88,20 @@ const PHASE_COPY: Record<AcquireLifecycleState, { label: string; detail: string 
     detail: "Writer 正从 adapter-authored Recording source 接收输入；Preview 是独立的有界派生显示，可单独停止。",
   },
   stop_requested: {
-    label: "STOP REQUESTED",
-    detail: "正在等待 writer Stop ACK；Preview 保持独立，文件安全状态尚未改变。",
+    label: "ENDING / SAVING",
+    detail: "正在停止输入并排空；Preview 保持独立。",
   },
   recording_stopped: {
-    label: "RECORDING STOPPED",
-    detail: "记录输入已停止，Preview 可继续；durability 与 seal 尚未证明。",
+    label: "SAVING · INPUT STOPPED",
+    detail: "输入已停止；正在等待 durability barrier，Preview 可继续。",
   },
   finalizing: {
-    label: "FINALIZING",
+    label: "SAVING · SEALING",
     detail: "正在等待 durability barrier 与 seal receipt。",
   },
   finalized: {
-    label: "FINALIZED",
-    detail: "Run 控制流程已结束；文件是否安全仍只看下方原始记录两项回执。",
+    label: "RUN ENDED",
+    detail: "最终结果只接受 adapter 的 NWB 发布回执。",
   },
   recovery_required: {
     label: "RECOVERY REQUIRED",
@@ -144,6 +147,7 @@ function topologyPods(topology: PodTopologySnapshot): PodSnapshot[] {
 
 function App() {
   const runtime = useMemo(() => createAcquireRuntime(), []);
+  const runDirectoryBrowserRef = useRef<Promise<RunDirectoryBrowser> | null>(null);
   const adapter = runtime.adapter;
   const mountedRef = useRef(false);
   const [capabilities, setCapabilities] = useState<CapabilitySnapshot | null>(null);
@@ -158,6 +162,11 @@ function App() {
   const [multiRecordPodKeys, setMultiRecordPodKeys] = useState<ReadonlySet<PodKey>>(() => new Set());
   const [runLabel, setRunLabel] = useState("FORGE-RUN");
   const [requestedDirectory, setRequestedDirectory] = useState("F:\\ForgeRuns");
+  const [directoryBrowserOpen, setDirectoryBrowserOpen] = useState(false);
+  const [directoryBrowserListing, setDirectoryBrowserListing] = useState<RunDirectoryListing | null>(null);
+  const [directoryBrowserBusy, setDirectoryBrowserBusy] = useState(false);
+  const [directoryBrowserError, setDirectoryBrowserError] = useState<string | null>(null);
+  const directoryBrowserRequestRef = useRef(0);
   const [plannedDurationHours, setPlannedDurationHours] = useState(24);
   const [renameTarget, setRenameTarget] = useState<{
     kind: DeviceKind;
@@ -185,12 +194,13 @@ function App() {
   const [podsCollapsed, setPodsCollapsed] = useState(false);
   const [controlsCollapsed, setControlsCollapsed] = useState(false);
   const [diagnosticsCollapsed, setDiagnosticsCollapsed] = useState(true);
-  const [integrityCollapsed, setIntegrityCollapsed] = useState(true);
   const [signalFocusActive, setSignalFocusActive] = useState(false);
   const effectivePodsCollapsed = signalFocusActive || podsCollapsed;
   const effectiveControlsCollapsed = signalFocusActive || controlsCollapsed;
   const effectiveDiagnosticsCollapsed = signalFocusActive || diagnosticsCollapsed;
-  const effectiveIntegrityCollapsed = signalFocusActive || integrityCollapsed;
+  const nwbOutputCapability = capabilities?.capabilities.nwb_materialization ?? null;
+  const finalOutputReady = capabilities !== null
+    && (capabilities.scope === "mock" || nwbOutputCapability?.status === "available");
 
   useEffect(() => {
     mountedRef.current = true;
@@ -265,6 +275,11 @@ function App() {
   }, [runPlanLocked, snapshot]);
 
   const handleOpenSingleRecordingSetup = useCallback(() => {
+    directoryBrowserRequestRef.current += 1;
+    setDirectoryBrowserOpen(false);
+    setDirectoryBrowserListing(null);
+    setDirectoryBrowserBusy(false);
+    setDirectoryBrowserError(null);
     if (runPlanLocked) {
       setPreflightOpen(true);
       return;
@@ -276,6 +291,11 @@ function App() {
   }, [runPlanLocked, selectablePods, selectedPodKey]);
 
   const handleOpenMultiRecordingSetup = useCallback(() => {
+    directoryBrowserRequestRef.current += 1;
+    setDirectoryBrowserOpen(false);
+    setDirectoryBrowserListing(null);
+    setDirectoryBrowserBusy(false);
+    setDirectoryBrowserError(null);
     if (runPlanLocked) {
       setPreflightOpen(true);
       return;
@@ -284,8 +304,58 @@ function App() {
     setPreflightOpen(true);
   }, [runPlanLocked]);
 
+  const handleRequestedDirectoryChange = useCallback((value: string) => {
+    setDirectoryBrowserError(null);
+    setRequestedDirectory(value);
+  }, []);
+
+  const getRunDirectoryBrowser = useCallback(() => {
+    runDirectoryBrowserRef.current ??= import("./adapters/runDirectoryBrowser")
+      .then((module) => module.createRunDirectoryBrowser(true));
+    return runDirectoryBrowserRef.current;
+  }, []);
+
+  const handleBrowseDirectory = useCallback(async (directory: string) => {
+    const requestToken = directoryBrowserRequestRef.current + 1;
+    directoryBrowserRequestRef.current = requestToken;
+    setDirectoryBrowserBusy(true);
+    setDirectoryBrowserError(null);
+    try {
+      const browser = await getRunDirectoryBrowser();
+      const listing = await browser.browse(directory);
+      if (directoryBrowserRequestRef.current !== requestToken) return;
+      setDirectoryBrowserListing(listing);
+    } catch (error) {
+      if (directoryBrowserRequestRef.current !== requestToken) return;
+      const module = await import("./adapters/runDirectoryBrowser");
+      if (directoryBrowserRequestRef.current !== requestToken) return;
+      setDirectoryBrowserError(module.directoryBrowserMessage(error));
+    } finally {
+      if (directoryBrowserRequestRef.current === requestToken) setDirectoryBrowserBusy(false);
+    }
+  }, [getRunDirectoryBrowser]);
+
+  const handleOpenDirectoryBrowser = useCallback(() => {
+    setDirectoryBrowserOpen(true);
+    setDirectoryBrowserListing(null);
+    setDirectoryBrowserError(null);
+    void handleBrowseDirectory(requestedDirectory);
+  }, [handleBrowseDirectory, requestedDirectory]);
+
+  const handleCloseDirectoryBrowser = useCallback(() => {
+    directoryBrowserRequestRef.current += 1;
+    setDirectoryBrowserOpen(false);
+    setDirectoryBrowserBusy(false);
+    setDirectoryBrowserError(null);
+  }, []);
+
+  const handleUseDirectory = useCallback((directory: string) => {
+    setRequestedDirectory(directory);
+    handleCloseDirectoryBrowser();
+  }, [handleCloseDirectoryBrowser]);
+
   const handleRunPreflight = useCallback(() => {
-    if (!snapshot || !recordingSelectionValid) return;
+    if (!snapshot || !recordingSelectionValid || !finalOutputReady) return;
     void issue({
       type: "preflight",
       plan: {
@@ -306,12 +376,13 @@ function App() {
         },
       },
     });
-  }, [issue, plannedDurationHours, recordingSelectionValid, requestedDirectory, runLabel, selectedRecordPods, snapshot]);
+  }, [finalOutputReady, issue, plannedDurationHours, recordingSelectionValid, requestedDirectory, runLabel, selectedRecordPods, snapshot]);
 
   const handleRequestArm = useCallback(async () => {
+    if (!finalOutputReady) return;
     const receipt = await issue({ type: "arm_recording" });
     if (receipt.accepted) setPreflightOpen(false);
-  }, [issue]);
+  }, [finalOutputReady, issue]);
 
   const handleToggleRecordPod = useCallback((podKey: PodKey, selected: boolean) => {
     if (snapshot && !["disconnected", "connected_idle", "finalized"].includes(snapshot.lifecycle)) return;
@@ -409,7 +480,15 @@ function App() {
   }
 
   const connected = snapshot.controlConnection === "connected";
-  const phase = PHASE_COPY[snapshot.lifecycle];
+  const runOutput = deriveRunOutput(
+    snapshot.lifecycle,
+    snapshot.evidence,
+    snapshot.runReceipt,
+    snapshot.scope,
+  );
+  const phase = ["finalized", "recovery_required"].includes(snapshot.lifecycle)
+    ? { label: runOutput.phaseLabel, detail: runOutput.detail }
+    : PHASE_COPY[snapshot.lifecycle];
   const controlSeparated = !connected && snapshot.runId !== null
     && !["finalized", "recovery_required"].includes(snapshot.lifecycle);
   const phaseDetail = controlSeparated
@@ -439,7 +518,7 @@ function App() {
     {
       id: "counter_gap",
       label: "Counter gap",
-      description: "锁存 source/analysis coverage FAILED，停止 Preview 并立即退出有效 Recording；禁止普通 Finalize。",
+      description: "锁存 source / spike detector coverage FAILED，停止 Preview 并立即退出有效 Recording；不能生成有效保存回执。",
       enabled: runtime.diagnostics !== null && snapshot.lifecycle === "recording",
     },
     {
@@ -451,9 +530,8 @@ function App() {
     {
       id: "durability_failure",
       label: "Durability failure",
-      description: "在 Stop 后使 Finalize 进入 Recovery Required，不伪造 seal。",
-      enabled: runtime.diagnostics !== null
-        && (snapshot.lifecycle === "recording_stopped" || snapshot.lifecycle === "finalizing"),
+      description: "预设下一次结束并保存的 durability / seal 失败，进入 Recovery Required，不伪造 seal。",
+      enabled: runtime.diagnostics !== null && snapshot.lifecycle === "recording",
     },
   ];
   const activeFaults = snapshot.faults.filter((fault) => fault.latched).map((fault) => ({
@@ -463,22 +541,26 @@ function App() {
     detail: fault.message,
     recoverable: fault.recoverable,
     recovery: fault.code === "counter_gap"
-      ? "不能清除或普通 Finalize；确认失败并关闭当前 Run"
+      ? "不能清除或生成有效 seal；确认失败并关闭当前 Run"
       : fault.code === "control_pipe_loss"
         ? "重新连接控制面；采集无需重启"
         : fault.code === "recording_pipeline_failure"
           ? "确认失败并关闭控制上下文；保留 partial journal，不补写 seal"
-          : "清除测试 barrier fault，Recover，再重新 Finalize",
+          : "清除测试 barrier fault，再用 Recover 重试保存",
   }));
 
   const preflightRunning = busyAction === "preflight" || snapshot.lifecycle === "preflighting";
   const setupTarget = snapshot.lifecycle === "finalized" ? null : snapshot.recordingTarget;
-  const preflightPassed = snapshot.lifecycle !== "finalized" && lifecycleHasPreflight(snapshot.lifecycle);
-  const recordingArmed = snapshot.lifecycle !== "finalized" && lifecycleHasArm(snapshot.lifecycle);
+  const preflightPassed = snapshot.lifecycle !== "finalized"
+    && finalOutputReady
+    && lifecycleHasPreflight(snapshot.lifecycle);
+  const recordingArmed = snapshot.lifecycle !== "finalized"
+    && finalOutputReady
+    && lifecycleHasArm(snapshot.lifecycle);
   const preflightChecks: PreflightCheck[] = [
     {
       id: "adapter-scope",
-      label: "Adapter / evidence scope",
+      label: "适配器与证据范围",
       status: "pass",
       detail: capabilities.scope === "software"
         ? `${capability(capabilities, "mock_acquisition").summary} FT601、Aggregator 10GbE 与物理 Pod 不在本 receipt 范围内。`
@@ -487,7 +569,7 @@ function App() {
     },
     {
       id: "preview-session",
-      label: "Live Preview source",
+      label: "Preview 数据源",
       status: snapshot.previewState === "live" ? "pass" : "blocked",
       detail: snapshot.previewState === "live"
         ? capabilities.scope === "software"
@@ -498,7 +580,7 @@ function App() {
     },
     {
       id: "pod-plan",
-      label: recordingSetupMode === "single" ? "Single-device recording identity" : "Multi-device recording identities",
+      label: recordingSetupMode === "single" ? "单设备记录身份" : "多设备记录身份",
       status: recordingSelectionValid ? "pass" : "blocked",
       detail: recordingSelectionValid
         ? `${selectedRecordPods.length} 个 Pod 将写入；Run plan 绑定 route key、immutable device ID 与 identity receipt`
@@ -509,8 +591,8 @@ function App() {
     },
     {
       id: "recording-target",
-      label: "Create-new Run target",
-      status: setupTarget ? "pass" : preflightRunning ? "pending" : "blocked",
+      label: "新建记录目录",
+      status: setupTarget ? "pass" : "pending",
       detail: setupTarget
         ? `${setupTarget.resolvedRunDirectory} · ${setupTarget.directoryCreateDisposition} · overwrite forbidden`
         : lastCommand?.intent === "preflight" && !lastCommand.accepted
@@ -519,9 +601,32 @@ function App() {
       evidence: setupTarget?.evidenceHash ?? "no reservation receipt",
     },
     {
+      id: "final-nwb-output",
+      label: snapshot.scope === "mock" ? "模拟输出范围" : "最终文件 · NWB",
+      status: snapshot.scope === "mock"
+        ? "pass"
+        : nwbOutputCapability?.status === "available"
+          ? "pass"
+          : nwbOutputCapability?.status ?? "unavailable",
+      detail: snapshot.scope === "mock"
+        ? "本次只运行模拟工作流，不生成记录文件。"
+        : finalOutputReady
+          ? "正式记录必须生成、验证并以 create-new 方式发布 NWB；最终仍以 Run receipt 为准。"
+          : "当前 adapter 没有可用的 NWB materializer，正式记录在 Preflight 阶段被阻止。",
+      evidence: snapshot.scope === "mock"
+        ? "MOCK_WORKFLOW_NO_FILE"
+        : `${nwbOutputCapability?.reasonCode ?? "NO_NWB_CAPABILITY"} · ${nwbOutputCapability?.claimScope?.toUpperCase() ?? "SOFTWARE"}`,
+    },
+    {
       id: "daemon-preflight",
-      label: "Adapter admission snapshot",
-      status: preflightPassed ? "pass" : preflightRunning ? "pending" : "blocked",
+      label: "记录准入快照",
+      status: preflightPassed
+        ? "pass"
+        : preflightRunning
+          ? "pending"
+          : lastCommand?.intent === "preflight" && !lastCommand.accepted
+            ? "blocked"
+            : "pending",
       detail: preflightPassed
         ? `${capabilities.scope === "software" ? "Software daemon" : "Mock adapter"} snapshot 已进入 ${snapshot.lifecycle}`
         : "等待 adapter 报告，不由按钮推测通过",
@@ -529,7 +634,7 @@ function App() {
     },
     {
       id: "input-contract",
-      label: "Frozen neural input contract",
+      label: "神经数据输入契约",
       status: recordingSelectionValid && selectedRecordPods.every((pod) =>
         pod.identity.identityEvidenceHash !== null && pod.neuralInput?.evidenceHash !== null)
         ? "pass"
@@ -589,7 +694,7 @@ function App() {
     ? { title: "宽带采样极值预览", detail: "当前 8 通道 bank；每桶只查有界代表点及已知 spike 支撑点，不冒充完整桶 MIN–MAX", stats: "SAMPLED RMS / PEAK" }
     : previewKind === "lfp"
       ? { title: "LFP 参考分量采样极值", detail: "当前 8 通道 bank；来自同一合成式中的 8 Hz 真值分量，不是 Intan 原生 LFP，也不是已验证生产滤波器", stats: "LFP RMS / PEAK" }
-      : { title: "Spike 活动、Raster 与波形", detail: "同一合成流的事件 oracle → 8 通道 bank raster → 单通道 mean/P10/P90；不是已验证生产 detector/sorter", stats: "CH EVENTS / SOURCE" };
+      : { title: "Spike 活动、Raster 与波形", detail: "同一合成流的事件 oracle → 8 通道 bank raster → 选中通道完整保留窗 waveform；可切换全部、统计与最新。不是已验证生产 detector/sorter", stats: "CH EVENTS / SOURCE" };
   const channelStatsValue = previewKind === "spike"
     ? channelStats.eventCount === null
       ? "—"
@@ -599,10 +704,13 @@ function App() {
     : channelStats.rms === null
       ? "—"
       : `${channelStats.rms.toFixed(1)} / ${channelStats.peak?.toFixed(1) ?? "—"} ${channelStats.unitLabel ?? selectedUnitLabel}`;
+  const lastCommandLabel = lastCommand?.intent === "stop_recording"
+    ? "END & SAVE"
+    : lastCommand?.intent.replaceAll("_", " ").toUpperCase();
 
   return (
     <div
-      className={`app-shell${effectiveIntegrityCollapsed ? " app-shell--integrity-collapsed" : ""}`}
+      className="app-shell"
       data-signal-focus={signalFocusActive ? "true" : "false"}
     >
       <header className="bench-header">
@@ -636,7 +744,7 @@ function App() {
         <span>CONTROL RECEIPT</span>
         {lastCommand ? (
           <>
-            <strong>{lastCommand.intent.replaceAll("_", " ").toUpperCase()} · {lastCommand.accepted ? "ACCEPTED" : "REJECTED"}</strong>
+            <strong>{lastCommandLabel} · {lastCommand.accepted ? "ACCEPTED" : "REJECTED"}</strong>
             <code>{lastCommand.receiptId}</code>
             <p>{lastCommand.message}；accepted 不等于状态已发生。</p>
           </>
@@ -751,11 +859,15 @@ function App() {
                 onSelect={setPreviewKind}
               />
               <div className="preview-control-cluster">
-                <span>屏幕历史窗</span>
+                <span>{previewKind === "spike" ? "波形保留时间" : "屏幕历史窗"}</span>
                 <div
                   className="segmented"
-                  aria-label="预览屏幕历史时间范围；不改变采样率或检测配置"
-                  title="1 / 2 / 5 秒只改变屏幕回看范围，不改变 Headstage 采样率"
+                  aria-label={previewKind === "spike"
+                    ? "选中通道每条 event waveform 的保留时间；不改变采样率或事件生成"
+                    : "预览屏幕历史时间范围；不改变采样率或检测配置"}
+                  title={previewKind === "spike"
+                    ? "每条 waveform 从其 source sample 时刻起保留相同的 1 / 2 / 5 秒；到期即隐去"
+                    : "1 / 2 / 5 秒只改变屏幕回看范围，不改变 Headstage 采样率"}
                 >
                   {[1, 2, 5].map((seconds) => (
                     <button
@@ -763,7 +875,9 @@ function App() {
                       type="button"
                       className={windowSeconds === seconds ? "active" : ""}
                       aria-pressed={windowSeconds === seconds}
-                      aria-label={`显示过去 ${seconds} 秒`}
+                      aria-label={previewKind === "spike"
+                        ? `每条 waveform 保留 ${seconds} 秒`
+                        : `显示过去 ${seconds} 秒`}
                       onClick={() => setWindowSeconds(seconds)}
                     >
                       {seconds} s
@@ -932,10 +1046,10 @@ function App() {
                 <PanelRightOpen size={18} aria-hidden="true" />
                 <span>CTRL</span>
               </button>
-              <div className={`control-rail__phase${snapshot.lifecycle === "recording" ? " is-recording" : ""}${snapshot.lifecycle === "recovery_required" ? " has-fault" : ""}`} title={phase.label}>
+              <div className={`control-rail__phase${runOutput.state === "recording" ? " is-recording" : ""}${runOutput.urgent ? " has-fault" : ""}`} title={phase.label}>
                 <Activity size={15} aria-hidden="true" />
                 <span>RUN</span>
-                <strong>{snapshot.lifecycle === "recording" ? "REC" : snapshot.lifecycle === "stop_requested" ? "ACK" : connected ? "IDLE" : "OFF"}</strong>
+                <strong>{connected ? runOutput.compactLabel : "OFF"}</strong>
               </div>
               <div className={`control-rail__preview${previewActive ? " is-live" : ""}`} title={`Preview ${snapshot.previewState}`}>
                 <Waves size={14} aria-hidden="true" />
@@ -945,27 +1059,33 @@ function App() {
               <button
                 className="instrument-button instrument-button--stop control-rail__stop"
                 type="button"
-                aria-label="停止记录"
+                aria-label="结束并保存"
                 disabled={!canStopRecording || busy}
-                title={connected ? "停止 writer 输入；Preview 继续；不表示文件已安全" : "控制连接丢失；GUI 无法发送 Stop"}
+                title={connected
+                  ? "一次请求完成停止输入、排空、durability barrier 与 seal；Preview 继续"
+                  : "控制连接丢失；GUI 无法发送结束并保存"}
                 onClick={() => void issue({ type: "stop_recording", reason: "operator" })}
               >
                 <CircleStop size={18} aria-hidden="true" />
-                <span>Stop</span>
-                <b>Recording</b>
+                <span>End</span>
+                <b>&amp; Save</b>
               </button>
               <span className="control-rail__stop-boundary">
                 {!connected
                   ? "NO CTRL"
-                  : snapshot.lifecycle === "recording"
-                    ? "FILE NOT SAFE"
-                    : snapshot.lifecycle === "stop_requested"
-                      ? "WAIT ACK"
-                      : ["recording_stopped", "finalizing", "recovery_required"].includes(snapshot.lifecycle)
-                        ? "STOPPED ≠ SAFE"
-                        : snapshot.lifecycle === "finalized"
-                          ? "RECEIPT FINAL"
-                          : snapshot.previewState === "live" ? "PREVIEW ONLY" : "NO RECORDING"}
+                  : runOutput.state === "recording"
+                    ? "RECORDING"
+                    : runOutput.state === "saving"
+                      ? "NWB OUTPUT"
+                      : runOutput.state === "nwb_saved"
+                        ? "NWB SAVED"
+                        : runOutput.state === "mock_complete"
+                          ? "MOCK ONLY"
+                          : runOutput.state === "raw_retained"
+                            ? "NWB INCOMPLETE"
+                            : runOutput.state === "failed"
+                              ? "RUN FAILED"
+                              : snapshot.previewState === "live" ? "PREVIEW" : "NO RECORDING"}
               </span>
               <span className={`control-rail__faults${activeFaults.length > 0 ? " has-fault" : ""}`}>
                 {activeFaults.length > 0 ? `${activeFaults.length} FLT` : "0 FLT"}
@@ -985,7 +1105,7 @@ function App() {
             recordingArmed={lifecycleHasArm(snapshot.lifecycle)}
             recording={snapshot.lifecycle === "recording"}
             recordingStopped={lifecycleHasStopped(snapshot.lifecycle)}
-            durabilityProven={snapshot.evidence.durability.status === "proven"}
+            runOutput={runOutput}
             finalized={snapshot.lifecycle === "finalized"}
             recoveryRequired={snapshot.lifecycle === "recovery_required"}
             canConnect={!connected
@@ -1003,9 +1123,8 @@ function App() {
               ? snapshot.selectedPodKeys.length
               : selectedRecordPods.length}
             previewDeviceName={selectedPod?.identity.displayName ?? selectedPod?.label ?? "未选择设备"}
-            canStart={connected && snapshot.lifecycle === "armed"}
+            canStart={connected && finalOutputReady && snapshot.lifecycle === "armed"}
             canStopRecording={canStopRecording}
-            canFinalize={connected && snapshot.lifecycle === "recording_stopped"}
             canRecover={snapshot.scope === "mock"
               && connected
               && snapshot.lifecycle === "recovery_required"
@@ -1022,7 +1141,6 @@ function App() {
             onSetupMultiRecording={handleOpenMultiRecordingSetup}
             onStart={() => void issue({ type: "start_recording" })}
             onStopRecording={() => void issue({ type: "stop_recording", reason: "operator" })}
-            onFinalize={() => void issue({ type: "finalize_run" })}
             onRecover={() => void issue({ type: "recover_run" })}
             onAcknowledgeFailed={() => void issue({ type: "acknowledge_failed_run" })}
             onCollapse={() => setControlsCollapsed(true)}
@@ -1032,22 +1150,13 @@ function App() {
       </main>
 
       <RunIntegrityRail
-        runId={snapshot.runId}
         lifecycle={snapshot.lifecycle}
         evidence={snapshot.evidence}
         runReceipt={snapshot.runReceipt}
-        synthetic={snapshot.synthetic}
-        collapsed={effectiveIntegrityCollapsed}
-        onToggleCollapsed={() => {
-          if (signalFocusActive) {
-            setSignalFocusActive(false);
-            setIntegrityCollapsed(false);
-          } else {
-            setIntegrityCollapsed((collapsed) => !collapsed);
-          }
-        }}
+        scope={snapshot.scope}
       />
 
+      {preflightOpen ? <Suspense fallback={null}>
       <PreflightDialog
         open={preflightOpen}
         running={preflightRunning}
@@ -1055,6 +1164,10 @@ function App() {
         armed={recordingArmed}
         recordingMode={recordingSetupMode}
         adapterScope={snapshot.scope}
+        finalOutputReady={finalOutputReady}
+        finalOutputLabel={snapshot.scope === "mock"
+          ? "模拟流程 · 无文件"
+          : finalOutputReady ? "NWB 2.x · CREATE NEW" : "NWB 输出未接入"}
         runLabel={runLabel}
         requestedDirectory={requestedDirectory}
         plannedDurationHours={plannedDurationHours}
@@ -1070,8 +1183,17 @@ function App() {
         recordingTarget={setupTarget}
         receiptId={lastCommand?.intent === "preflight" ? lastCommand.receiptId : snapshot.lastCommandReceiptId}
         checks={preflightChecks}
+        directoryBrowserAvailable={"__TAURI_INTERNALS__" in globalThis}
+        directoryBrowserOpen={directoryBrowserOpen}
+        directoryBrowserListing={directoryBrowserListing}
+        directoryBrowserBusy={directoryBrowserBusy}
+        directoryBrowserError={directoryBrowserError}
         onRunLabelChange={setRunLabel}
-        onRequestedDirectoryChange={setRequestedDirectory}
+        onRequestedDirectoryChange={handleRequestedDirectoryChange}
+        onOpenDirectoryBrowser={handleOpenDirectoryBrowser}
+        onBrowseDirectory={(directory) => void handleBrowseDirectory(directory)}
+        onUseDirectory={handleUseDirectory}
+        onCloseDirectoryBrowser={handleCloseDirectoryBrowser}
         onPlannedDurationHoursChange={(value) => setPlannedDurationHours(
           Number.isFinite(value) ? Math.min(24, Math.max(0.1, value)) : 0.1,
         )}
@@ -1080,6 +1202,7 @@ function App() {
         onRequestArm={() => void handleRequestArm()}
         onCancel={() => setPreflightOpen(false)}
       />
+      </Suspense> : null}
 
       <DeviceNameDialog
         open={renameTarget !== null}

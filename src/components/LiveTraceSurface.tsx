@@ -85,13 +85,12 @@ function frameToTraceBlock(frame: EnvelopePreviewFrame): TraceBlock {
 }
 
 function frameStats(frame: PreviewFrame, selectedChannel: number): ChannelDisplayStats {
-  if (frame.encoding === "spike_preview_v2") {
-    const waveform = frame.selectedChannelWaveform;
-    const activity = frame.channelActivity.find((item) => item.channel === selectedChannel);
+  if (frame.encoding === "spike_preview_v3") {
+    const waveform = frame.selectedChannelWaveformStats;
     return {
       rms: null,
       peak: waveform?.meanValues.reduce((peak, value) => Math.max(peak, Math.abs(value)), 0) ?? null,
-      eventCount: activity?.observedEventCount ?? null,
+      eventCount: frame.selectedChannelWaveforms.observedEventCount,
       threshold: waveform?.thresholdValue ?? null,
       unitLabel: frameUnitLabel(frame),
       podEventCount: frame.podObservedEventCount,
@@ -130,13 +129,14 @@ function frameMatches(
     && Math.abs(frame.windowSeconds - windowSeconds) < 0.001
     && frame.channelStart === channelStart
     && frame.channelCount === channelCount
-    && (frame.encoding !== "spike_preview_v2" || frame.selectedChannel === selectedChannel);
+    && (frame.encoding !== "spike_preview_v3" || frame.selectedChannel === selectedChannel);
 }
 
 /**
  * Preview ownership stays below the App control surface. Wideband/LFP use
  * bounded envelopes; Spike uses full-channel counts, a bounded bank raster,
- * and one waveform summary. No continuous raw neural stream crosses this port.
+ * and a complete selected-channel rolling waveform window. No continuous raw
+ * neural stream crosses this port.
  */
 export function LiveTraceSurface({
   source,
@@ -246,7 +246,7 @@ export function LiveTraceSurface({
     );
   }
 
-  if (frame.encoding === "spike_preview_v2") {
+  if (frame.encoding === "spike_preview_v3") {
     return (
       <SpikeScopeCanvas
         frame={frame as SpikePreviewFrame}

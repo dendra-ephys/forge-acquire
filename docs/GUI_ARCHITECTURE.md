@@ -1,7 +1,8 @@
 # Forge Acquire GUI architecture
 
-Status: control-plane design and mock-adapter contract. This document is not daemon,
-hardware, HIL, endurance, NWB-publication, or product-release evidence.
+Status: control-plane design, mock-preview contract, and software-daemon adapter boundary.
+This document is not by itself fresh daemon execution, hardware, HIL, endurance,
+NWB-publication, or product-release evidence.
 
 ## Product intent
 
@@ -16,8 +17,8 @@ Instrument / 实验台精密仪器**:
 - system figures use tabular numerals; status never depends on color alone;
 - no marketing metrics, card-grid dashboard, glassmorphism, broad gradients, decorative
   animation, or network font dependency;
-- one signature interaction, **Recording save status**, gives a plain-language overall verdict
-  while keeping raw Recording closure separate from downstream outputs and optional events.
+- one signature interaction, a compact **Run result strip**, presents one receipt-backed
+  operator outcome without a row of internal evidence categories.
 
 The UI is a control plane. It may summarize evidence, but it may not infer a capability,
 invent a successful transition, or promote an unavailable function.
@@ -31,16 +32,25 @@ Settings and diagnostics are progressive disclosure, never replacements for the 
 |---|---|
 | Top command bar | Source identity, daemon freshness, current lifecycle phase, Run clock, and the next valid acquisition action |
 | Left device list | Independently collapsible devices grouped by Direct-to-PC or expandable Aggregator paths; display name, immutable ID, Preview selection, and REC membership remain distinct |
-| Central preview | Primary and largest working surface: stable Wideband/LFP/Spikes views using bounded eight-channel banks, clickable full-Pod Spike channel activity, and selected-channel waveform summaries |
+| Central preview | Primary and largest working surface: stable Wideband/LFP/Spikes views using bounded eight-channel banks, clickable full-Pod Spike channel activity, and a complete rolling window of selected-channel event waveforms |
 | Diagnostics | Independently collapsible fault/recovery details; compact by default and never a replacement for visible fault state |
-| Right control column | Independently collapsible Connect, Preview, Recording setup/Arm/Record/Stop/Finalize controls and current Run target; no stimulation control appears in this acquisition surface |
-| Bottom Recording save status | Independently collapsible, compact by default; always answers whether raw Recording is safely sealed, with expanded required Recording, later-processing, and optional-event receipts |
+| Right control column | Independently collapsible Connect, Preview, Recording setup/Arm/Record/End-and-Save controls and current Run target; no stimulation control or second Finalize action appears in this acquisition surface |
+| Bottom Run result strip | Fixed compact operator layer with exactly one outcome: not started, recording, ending/saving, saved, simulation complete, NWB incomplete, or failed |
 
-Source-range continuity plus file durability/seal form the raw Recording closure. Stop alone is
-never a safe-save verdict. NWB and Analysis are downstream outputs. External events are an
-optional Run-bound timeline and do not grant stimulation authority. Each expanded slot shows
-text, an icon, and receipt sequence/hash without inheriting success from another group. A mock
-finalized receipt explicitly states that it created no real file.
+`End and Save` is one operator action, but its click/command acknowledgement alone is never a
+saved verdict. Stop, drain, durability, and journal seal create a recoverable intermediate;
+they do not create the required experiment output. The UI remains `Ending / Saving` until the
+final NWB has been generated and reconciled, has passed schema and semantic validation, and has been published with
+no-overwrite semantics, with a matching receipt. `raw_sealed` is rendered only as `Raw journal
+retained; NWB incomplete`. A browser-mock completion says `Simulation complete; no NWB file
+created`. The previous five evidence slots and technical drawer are removed. Analysis and
+external-event status are hidden until their adapter commands, configuration, and receipts are
+actually connected.
+
+That removal applies to the old Run-result evidence rail and its technical drawer. Recording
+Preflight still preserves engineering evidence inside the setup dialog, but only through a
+default-collapsed disclosure. Its normal view contains four operator conclusions: recording
+devices, save location, final output, and current readiness.
 
 Detailed hardware hashes, service fields, and long fault history belong in a collapsible
 Diagnostics drawer. Current Preview and Recording controls remain visible without scrolling
@@ -48,21 +58,21 @@ through those details.
 
 ### Data-first collapse contract
 
-The layout allocates surplus width and height to the signal display. The device list and Run
-controls collapse independently, as do Diagnostics and Recording save status. Both are compact
-on startup. `Signal Focus` collapses all four secondary regions
-with one action; leaving it restores the exact independent collapse states that were active
-before focus mode.
+The layout allocates surplus width and height to the signal display. The device list, Run controls,
+and Diagnostics collapse independently. Run result remains one fixed-height strip and has no
+technical overlay. `Signal Focus` collapses the other secondary regions; leaving it restores the
+exact independent states from before focus mode.
 
 Collapse is local presentation state. It sends no `AcquireIntent`, changes no snapshot or
 receipt, and must not reset the selected Pod, view, channel bank, channel, time window, or
 bounded preview frame. The adapter boundary is therefore unchanged.
 
-When Run controls are compact during recording, an explicit text-labelled `Stop Recording`
-control remains visible. It detaches writer input while Preview remains live; it never means
-data is durable, sealed, materialized, or safe to remove. Stimulation controls are absent.
-Compact Recording save status retains a plain-language overall verdict, so no save state is
-encoded by color alone.
+When Run controls are compact during recording, an explicit text-labelled `End and Save`
+control remains visible. Preview remains live while this one request advances through stopping
+input, draining, journal seal, NWB generation/validation, and no-overwrite publication. The
+compact state says `SAVING`, not `SAVED`, until the final NWB receipt is present. Stimulation
+controls are absent. A source gap, CRC error, or data-path overflow replaces the ordinary outcome
+with a latched hard-fault result and its actionable reason; it is never a routine status column.
 
 ## RHX interaction reference and Forge adaptation
 
@@ -81,16 +91,16 @@ The mapping is deliberate:
 | RHX operating idea | Forge Acquire adaptation |
 |---|---|
 | Controller selection and demo mode | Adapter capability snapshot plus permanently labelled mock scope |
-| Fixed Run/Stop/Record transport controls | Fixed Connect, Start/Stop Preview, Recording setup/Arm, Start/Stop Recording, and Finalize positions |
+| Fixed Run/Stop/Record transport controls | Fixed Connect, Start/Stop Preview, Recording setup/Arm, Start Recording, and one End-and-Save position |
 | Record disabled before filename/save preparation | Record disabled until adapter-authored Preflight and Recording Arm snapshots arrive |
 | HW buffer, SW buffer, CPU load bars | Snapshot-authored Source FIFO, Writer Queue, and Control Load indicators; stale values are labelled stale |
 | Record clock and fixed sample-rate readout | Run epoch/plan clock and Pod sample-rate fields, only when provided by snapshots |
-| Time/vertical scale beside waveform | Explicit `显示时窗` 1/2/5 s requests and amplitude controls local to the bounded Canvas preview |
-| Stop followed by RAM review | Stop Recording leaves live bounded Preview available while Forge separately waits for durability and seal |
+| Time/vertical scale beside waveform | Explicit 1/2/5 s screen windows for Wideband/LFP and source-sample waveform TTL for Spikes, plus amplitude controls local to the bounded Canvas preview |
+| Stop followed by RAM review | End and Save leaves live bounded Preview available while the same operation advances through stop, drain, journal seal, and final NWB publication |
 
-Forge must go further than RHX where its independent daemon and derived-data contract
-require it: a command acknowledgement is not a state transition, Preview is not Recording,
-Stop is not safe storage, and the evidence groups remain independently evidenced.
+Forge must go further than RHX where its independent daemon and final-output contract
+require it: a command acknowledgement is not a completed save, Preview is not Recording,
+and only a final NWB publication receipt may produce `Saved`.
 
 ### Device list and connection paths
 
@@ -118,11 +128,19 @@ round the Aggregator tree is a synthetic mock fixture for exercising the interac
 same parent row simultaneously says `SYNTHETIC PATH` and `HW UNAVAILABLE`. It does not
 claim discovery, 10GbE streaming, synchronization, or hardware qualification.
 
-## Evidence-driven lifecycle
+## Receipt-driven lifecycle
 
-Transport, Preview, Recording, writer, materialization, analysis, and external events are
-orthogonal state domains. A concise operator phase may summarize them, but the underlying
-states remain independently visible.
+Transport, Preview, Recording, writer, and NWB materialization remain distinct adapter state
+domains. The operator surface summarizes them as one Run result without exposing every
+intermediate receipt as a permanent column. Analysis and external-event domains are not shown
+because their GUI interfaces are not connected in this round.
+
+The same compression applies inside Recording Preflight: the adapter/model retains its fine-grained
+state machine, while the default dialog reduces it to four operator conclusions. The visible fault
+copy names the most upstream actionable cause. Dependent steps remain `waiting` until they are
+attempted, so an unavailable NWB materializer is not presented as three independent faults through
+additional target-allocation and admission `blocked` states. Expanding `Technical details` reveals
+the individual checks, reservation receipt, command receipt, and evidence hashes.
 
 The recording lifecycle is deliberately fine-grained:
 
@@ -137,12 +155,13 @@ Recording:
   -> Recording armed
   -> Starting
   -> Recording
-  -> Stop requested
+  -> End-and-Save requested
   -> Recording stopped (Preview may remain live)
   -> Draining
   -> Durability confirmed
-  -> Sealing / Finalizing
-  -> Finalized | Recovery required | Failed
+  -> Journal sealing
+  -> NWB materializing / validating / publishing
+  -> Saved | NWB incomplete | Recovery required | Failed
 ```
 
 Every forward transition requires a new adapter snapshot or command receipt. Button press,
@@ -154,8 +173,8 @@ Preview is an adapter-authored session independent of Recording. `Freeze display
 WebView presentation state. Neither display freeze nor a bounded preview-frame replacement
 changes Recording or Run evidence. Live Preview is required to enter Recording setup and
 Preflight, but once that plan is accepted the operator may stop or restart Preview during Arm,
-Recording, Stop, finalization, or failure handling. Those Preview commands never send a Run
-Stop/Abort and never alter the Recording lifecycle.
+Recording, End and Save, finalization, or failure handling. Those Preview commands never send
+a Run Stop/Abort and never alter the Recording lifecycle.
 
 ### Recording Arm and external stimulation boundary
 
@@ -166,27 +185,34 @@ Recording Arm remains an explicit Recording control:
 - The acquisition GUI exposes no Stimulation Arm command.
 - A future external Python stimulation module needs a separately governed API and safety
   contract. This mock GUI neither defines nor qualifies that protocol.
-- Optional external-event receipts may be displayed in the Run timeline, but an external
-  report can never turn hardware stimulation capability green.
+- External-event controls and status remain hidden until a governed adapter interface exists;
+  an external report can never turn hardware stimulation capability green.
 
-### Stop, safe, and GUI close
+### End and Save, evidence, and GUI close
 
-`Stop Recording` means that a Stop request was issued and, only after receipt, that the
-writer no longer accepts new Run input. Preview may continue. It does **not** mean the Run is
-safe.
+`End and Save` is the sole operator action for ending a healthy Recording. Preview may
+continue. Internally the adapter/data plane stops accepting Run input, drains accepted records,
+crosses the durability barrier, seals the journal, materializes and validates NWB, reconciles
+counters, and publishes the final NWB with no-overwrite semantics. No second Finalize click is
+required. The action is complete only after the matching publication receipt; while any stage
+is pending the UI says `Ending / Saving`, never `Saved`.
 
 ```text
-Stop receipt
-  != journal drained
-  != stable-media durability confirmed
-  != journal sealed
-  != NWB materialized/validated/published
+End-and-Save command acknowledgement
+  -> input stopped
+  -> journal drained
+  -> stable-media durability confirmed
+  -> journal sealed (recoverable intermediate, not Saved)
+  -> NWB materialized and reconciled
+  -> NWB schema/semantic validation passed
+  -> final NWB published create-new/no-overwrite (Recording ended and saved)
 ```
 
-While finalization is incomplete, the UI simultaneously states both truths, for example:
-`Acquisition stopped` and `Data still draining; do not remove storage`. Only the applicable
-daemon-authored durability/seal receipt may change that wording. NWB and publication remain
-separate lanes after acquisition storage is safe.
+While the internal save sequence is incomplete, the UI states the current single outcome, for
+example `Ending / Saving; do not remove storage`. A sealed journal without a final publication
+receipt becomes `Raw journal retained; NWB incomplete`, never `Saved`. A source sample gap is a
+hard failure with exact affected ranges when known; the UI never normalizes it into an acceptable
+continuity lane or invents a count of missed biological events.
 
 Closing, minimizing, reloading, or losing the GUI must never be translated into Stop. During
 an active or recovering Run, the UI says that the independent daemon owns acquisition and
@@ -203,8 +229,8 @@ lifecycle as stale, disables a fake manual Connect action, and waits for bounded
 snapshot polling to re-establish control.
 
 Explicit `Disconnect` is disabled and rejected after a Recording setup has opened a Run
-context, until that Run is finalized or its failure is acknowledged. This preserves the
-operator's Stop/Finalize command path while the independent daemon may still be writing. It
+context, until that Run is ended and sealed or its failure is acknowledged. This preserves the
+operator's End-and-Save command path while the independent daemon may still be writing. It
 does not change the window-close rule: closing the GUI still sends no implicit Stop command.
 
 ## Adapter boundary
@@ -241,7 +267,7 @@ interface MockFaultController {
 ```
 
 `DaemonSnapshot` carries capability scope, Preview state, Recording lifecycle, device
-identity, target reservation, grouped evidence, faults, and freshness with monotonic
+identity, target reservation, closure receipts, faults, and freshness with monotonic
 identity. Receipts carry the command
 identity and resulting evidence; command resolution alone does not mutate the visible state.
 
@@ -261,7 +287,31 @@ adapter-authored final Run directory, sequence, canonical `run.forgewal` name, a
 hash. The mock returns `directoryCreateDisposition=simulated`, allocates only a name in memory,
 and writes no file. A real daemon may return `created_new` only after atomically creating both
 the directory and journal with create-new semantics and revalidating volume/path identity;
-the React path string is never storage evidence.
+the React path string is never storage evidence. A later `Saved` verdict additionally requires
+a final NWB artifact receipt binding the new file path, validation results, reconciliation, and
+no-overwrite publication to the same Run. Journal reservation or `raw_sealed` cannot substitute
+for that receipt.
+
+Before Preflight, the displayed path is only the requested root plus a planned incrementing leaf.
+The operator summary may say `not created`; it may say `created` or `simulated allocation` only
+after the matching adapter reservation receipt. Absence of that receipt before the command runs is
+not a standalone fault.
+
+The desktop shell exposes a bounded, read-only directory enumerator through the narrow
+`RunDirectoryBrowser` boundary. It does not invoke Windows Explorer, COM folder dialogs, Quick
+Access, thumbnails, or Shell extensions. The Rust command canonicalizes one explicitly requested
+absolute path on a blocking worker, lists only its direct child directories, returns at most 128
+entries after scanning at most 2048 directory entries, and accepts only one in-flight request for
+the process. Drive buttons come from the `GetLogicalDrives` bitmask without querying volume labels.
+Typed replies remain browse-only evidence; they do not prove writability, durability, free-space
+endurance, or path identity for Recording.
+
+The browser reuses the Recording setup dialog rather than stacking a second modal. Escape,
+backdrop activation, or `Return to Recording setup` cancels the draft and preserves the current
+requested root. Only `Use current folder` commits the backend-returned canonical path. The root
+also remains directly editable. Preflight still owns the separate create-new numbered target
+reservation; directory browsing never proves that a Run directory or file exists. Browser mock QA
+disables this desktop-only action.
 
 The mock implementation may exercise all UI states deterministically. `MockFaultController`
 is mock-only, is visually labelled `SIMULATOR / TEST ONLY`, and is never exposed by the future
@@ -295,10 +345,20 @@ Signal type and display encoding are separate concepts:
   profile, configuration hash, passband, output rate, and delay. The current mock does not
   claim a filter ran: it displays the frozen 8 Hz truth component of the shared synthetic
   formula as `MOCK TRUTH`.
-- **Spikes** receives `spike_preview_v2`: full-Pod per-channel activity, a bounded raster for
-  the requested eight-channel bank, and one selected-channel mean/p10/p90 waveform summary.
-  It does not send per-event raw snippets, and events remain `UNSORTED` unless a qualified
-  receipt says otherwise.
+- **Spikes** receives `spike_preview_v3`: full-Pod per-channel activity, a bounded raster for
+  the requested eight-channel bank, and a complete rolling window containing every bounded
+  event-aligned waveform for the selected channel. `全部波形` is the default Canvas mode;
+  `统计` draws mean/p10/p90 computed from that same window, and `最新` draws only its newest
+  event. It does not send the continuous acquisition stream, and events remain `UNSORTED`
+  unless a qualified receipt says otherwise.
+
+The selected-channel window uses an exact source-sample TTL (`retentionSamples`) corresponding
+to the requested 1/2/5 s interval. New event snippets appear with the next bounded Preview
+frame; each expires only when its center leaves that common interval. `observedEventCount`
+must equal `returnedEventCount`, event IDs are unique, and coverage is complete before the UI
+may say `全部波形`. Exceeding the bounded waveform capacity fails coverage visibly rather than
+silently sampling away event waveforms. All three modes reuse the same bounded frame and one
+Canvas, so neither DOM nodes nor retained histories grow with Run duration.
 
 Spike accounting exposes full-Pod events, current-bank events, raster events actually drawn,
 and events intentionally omitted from the picture. Separate `SOURCE COVERAGE` and
@@ -321,12 +381,13 @@ The present mock has an explicit Preview session before Recording. `Connect` doe
 silently start it. `start_preview` and `stop_preview` have independent request/snapshot
 states; Preview frames carry no Run identity outside a source-confirmed Recording capture
 window. Starting Recording leaves
-Preview live, and Stop Recording does not stop it.
+Preview live, and End and Save does not stop it.
 
 The preview retains only the requested visible window and may replace an obsolete queued
 picture with the newest complete picture. Presentation freshness is shown as a state, never
-as permission to lose source or analysis coverage. React receives immutable low-rate status
-and selected-channel summaries; DOM size is independent of sample count and Run duration.
+as permission to lose source or analysis coverage. React receives immutable low-rate status,
+bounded selected-channel event snippets, and statistics; Canvas owns their pixels and DOM size
+is independent of event count and Run duration.
 
 ## Capability presentation matrix
 
@@ -339,26 +400,29 @@ work outside the GUI does not silently upgrade these rows.
 | Mock lifecycle/receipts/fault injection | Available, labelled `TEST ONLY` | Does not qualify the daemon, storage, hardware, or release path |
 | Mock device rename | Available, labelled `MOCK SESSION` | In-memory CAS/read-back only; not device NVM or cross-PC persistence |
 | Mock Run target name allocation | Available, labelled `MOCK NAME ALLOCATED / NO FILE CREATED` | In-memory sequence only; creates no directory or journal file |
-| Mock Wideband/LFP/Spike preview | Available, labelled `MOCK`, `MOCK TRUTH`, or `MOCK ORACLE` | Synthetic envelope/raster/waveform-summary interaction only; no production extractor or scientific-validity claim |
-| Tauri named-pipe daemon adapter | Not connected in this round | Future replacement behind `AcquireAdapter`; no real-daemon claim |
+| Mock Wideband/LFP/Spike preview | Available, labelled `MOCK`, `MOCK TRUTH`, or `MOCK ORACLE` | Synthetic envelope/raster/complete selected-channel rolling-waveform interaction only; no production extractor or scientific-validity claim |
+| Tauri named-pipe software-daemon adapter | Implemented for deterministic synthetic canonical SampleBlock recording when the Tauri path is active | Fresh E2E receipts may prove real directory/WAL/stop-drain-durability-seal software behavior only; they do not prove FT601, Intan, Aggregator, HIL, or release readiness |
 | Protected replay | `QUALIFICATION REQUIRED` unless a fresh adapter receipt explicitly reports it | Low-rate replay is not D3XX, endurance, or hardware evidence |
 | Direct FT601/D3XX Pod acquisition | `UNAVAILABLE` / `QUALIFICATION REQUIRED` | No approved production receipt, qualified device/ABI/HIL, or product integration |
 | Aggregator / 10GbE / 1–8 real-Pod aggregation | `UNAVAILABLE` | Discovery, control, stream, global time, recovery, and HIL remain open |
 | Real cross-Pod synchronization | `QUALIFICATION REQUIRED` | Never inferred from Pod count or mock clock alignment |
 | RHS stimulation | Not controlled by this acquisition GUI; capability remains `UNAVAILABLE` | External Python/module interface is not designed or qualified in this round |
 | Closed-loop control | `UNAVAILABLE` | Reference algorithms or mock workers are not scientific or hardware validation |
-| NWB lane | `QUALIFICATION REQUIRED`; real adapter receipt not connected in this round | GUI state is not materialization, validation, publication, or release evidence |
-| Online analysis lane | `UNAVAILABLE` unless a fresh worker receipt reports otherwise | No scientific-validity claim |
+| Final NWB output | Required for non-mock `Saved`; real publication receipt is not connected in this round | A reserved directory or sealed journal is not final NWB materialization, validation, reconciliation, or publication evidence |
+| Online analysis interface | Hidden | No GUI command/configuration/receipt contract is connected; no scientific-validity claim |
+| External-event interface | Hidden | No GUI command/configuration/receipt contract is connected; no stimulation authority is implied |
 | 24-hour acquisition/product release | `QUALIFICATION REQUIRED` | Frontend tests, screenshots, short runs, or journal-only evidence cannot pass it |
 
 ## Keyboard, accessibility, and minimum-window contract
 
 - Minimum supported workspace is 1080 × 720 with no document-level horizontal scroll.
-- At 1080 px, source, Preview, phase, Record/Stop text, recovery action, and grouped evidence
-  remain available. Secondary diagnostics collapse before critical labels do.
+- At 1080 px, source, Preview, phase, Record/Stop text, recovery action, and the single compact
+  Run result remain visible without resizing the signal workbench or causing document-level
+  horizontal scroll.
 - Critical controls provide at least a 44 × 44 px hit area with at least 8 px separation.
-- `Tab` order follows top command bar -> device list -> preview -> right controls -> Run evidence
-  details; `F6` may cycle these major regions.
+- `Tab` order follows top command bar -> device list -> preview -> right controls; the non-interactive
+  Run result is announced through its live region rather than inserted as an empty keyboard stop.
+  `F6` may cycle the interactive major regions.
 - Enter/Space activates focused controls. `Escape` closes non-destructive dialogs and restores
   focus.
 - Left/Right/Home/End move among the Wideband/LFP/Spikes tabs; Up/Down/Home/End select a
@@ -383,7 +447,7 @@ The normative budgets remain in `PERFORMANCE_BUDGET.md`:
 - machine/status and health updates are 5 Hz normally and 10 Hz maximum;
 - display envelopes are at most 30 frames/s; React commits outside the trace surface are at
   most 10/s while streaming;
-- raw WebView sample bytes and unbounded UI arrays/queues are both zero;
+- continuous raw acquisition-stream bytes and unbounded UI arrays/queues in the WebView are both zero; bounded event-aligned snippets are separately capped;
 - the 30-minute display gate requires bounded memory and no long task above 50 ms at p99;
 - an eventual 24-hour mock soak must show bounded retained histories and no Run-duration-
   proportional DOM, timer, listener, or heap growth.
@@ -401,8 +465,9 @@ Each handoff reports these layers independently:
    and visual QA for required states.
 2. **Mock interaction complete** — deterministic adapter tests cover the lifecycle, receipts,
    one-to-eight Pod states, failure injection, recovery, and stale/contradictory snapshots.
-3. **Real daemon connected** — requires fresh evidence from the production adapter boundary;
-   this mock round does not provide it.
+3. **Real software daemon connected** — requires fresh named-pipe E2E evidence from the
+   Tauri adapter boundary. A passing synthetic run proves only the exercised real
+   directory/WAL/stop-drain-durability-seal software path, not neural hardware input.
 4. **Hardware verified** — requires fresh D3XX/Pod/Aggregator/RHS/HIL evidence; frontend checks
    do not provide it.
 5. **Release gates passed** — requires the governed endurance, storage, NWB, hardware, fault,
