@@ -268,6 +268,21 @@ export type RunReceiptStatus =
   | "recovery_required"
   | "degraded";
 
+/**
+ * Final user artifact receipt. The GUI must not derive this path from the Run
+ * directory or promote a sealed recovery journal into a completed NWB file.
+ */
+export interface NwbArtifactReceipt {
+  artifactKind: "nwb";
+  filePath: string;
+  createDisposition: "created_new";
+  schemaValidated: true;
+  inspectorPassed: true;
+  publicationCommitted: true;
+  publicationReceiptId: string;
+  evidenceHash: string;
+}
+
 /** Immutable low-rate run evidence. `finalized` is always scoped; mock is not release evidence. */
 export interface RunReceipt {
   receiptKind: "run";
@@ -281,6 +296,8 @@ export interface RunReceipt {
   generatedAtMonotonicMs: number;
   evidence: RunIntegrityEvidence;
   recordingTarget: RecordingTargetReservation;
+  /** Null until a real adapter reports a validated, create-new NWB publication. */
+  nwbArtifact: NwbArtifactReceipt | null;
   faults: readonly FaultRecord[];
   evidenceHash: string;
 }
@@ -359,7 +376,6 @@ export type AcquireIntent =
   | { type: "arm_recording" }
   | { type: "start_recording" }
   | { type: "stop_recording"; reason?: string }
-  | { type: "finalize_run" }
   | { type: "recover_run" }
   | { type: "acknowledge_failed_run" };
 
@@ -439,7 +455,10 @@ export interface PreviewChannelEnvelope {
 export interface PreviewFrameBase {
   scope: AdapterScope;
   synthetic: boolean;
-  containsRawSamples: false;
+  /** Continuous source samples never cross into the WebView preview contract. */
+  containsContinuousRawSamples: false;
+  /** True only for bounded, event-aligned snippets in a Spike frame. */
+  containsEventWaveformSnippets: boolean;
   sequence: bigint;
   generatedAtMonotonicMs: number;
   /** Non-null only while this source interval is inside a source-confirmed Recording capture window. */
@@ -486,12 +505,35 @@ export interface SpikeWaveformSummary {
   channel: number;
   /** Null when events come from a synthetic schedule rather than a detector. */
   thresholdValue: number | null;
-  observedEventCount: number;
   contributingWaveformCount: number;
-  preTriggerSamples: number;
   meanValues: readonly number[];
   p10Values: readonly number[];
   p90Values: readonly number[];
+}
+
+/** One bounded event-aligned snippet, never a continuous raw stream. */
+export interface SpikeWaveformEvent {
+  eventId: string;
+  channel: number;
+  centerSample: bigint;
+  snippetSampleStart: bigint;
+  snippetSampleEndExclusive: bigint;
+  preTriggerSamples: number;
+  values: readonly number[];
+}
+
+/**
+ * Complete rolling-window snapshot for the selected channel. A caller may
+ * label this view "all waveforms" only while coverage is complete and the
+ * returned count equals the observed count.
+ */
+export interface SpikeWaveformWindow {
+  retentionSamples: bigint;
+  coverage: PreviewCoverageState;
+  reasonCode: string | null;
+  observedEventCount: number;
+  returnedEventCount: number;
+  events: readonly SpikeWaveformEvent[];
 }
 
 export interface SpikeChannelActivity {
@@ -514,11 +556,12 @@ export interface SpikeRasterAccounting {
 /**
  * Full-Pod event activity from the declared processing source (detector or
  * synthetic oracle), plus a bounded raster for the requested channel bank and
- * one selected-channel waveform summary. Never contains raw samples or
- * per-event waveform snippets.
+ * a complete rolling snapshot of selected-channel event snippets, and
+ * statistics computed from that same snapshot. Never contains a continuous
+ * raw sample stream.
  */
 export interface SpikePreviewFrame extends PreviewFrameBase {
-  encoding: "spike_preview_v2";
+  encoding: "spike_preview_v3";
   signalKind: "spike";
   sorting: "unsorted";
   waveformSampleRateHz: number;
@@ -527,8 +570,8 @@ export interface SpikePreviewFrame extends PreviewFrameBase {
   accounting: SpikeRasterAccounting;
   raster: readonly SpikeRasterEvent[];
   selectedChannel: number;
-  selectedChannelWaveform: SpikeWaveformSummary | null;
-  waveformUnavailableReasonCode: string | null;
+  selectedChannelWaveforms: SpikeWaveformWindow;
+  selectedChannelWaveformStats: SpikeWaveformSummary | null;
 }
 
 export type PreviewFrame = EnvelopePreviewFrame | SpikePreviewFrame;

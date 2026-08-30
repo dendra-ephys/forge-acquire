@@ -3,11 +3,19 @@ import { readFile, readdir } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 
 const dist = resolve("dist");
-const budgets = new Map([
+const startupBudgets = new Map([
   [".js", 100 * 1024],
   [".css", 10 * 1024],
 ]);
-const totals = new Map([...budgets.keys()].map((extension) => [extension, 0]));
+// Recording setup and the filesystem browser are intentional on-demand chunks.
+// Keep the acquisition console's startup budget unchanged, and separately cap
+// the complete offline payload so lazy loading cannot hide unbounded growth.
+const totalBudgets = new Map([
+  [".js", 112 * 1024],
+  [".css", 12 * 1024],
+]);
+const totals = new Map([...totalBudgets.keys()].map((extension) => [extension, 0]));
+const startupTotals = new Map([...startupBudgets.keys()].map((extension) => [extension, 0]));
 const forbiddenRuntimeUrls = /https?:\/\//i;
 const forbiddenProductionCspSources = /127\.0\.0\.1|(?:^|[;\s])wss?:/i;
 
@@ -19,12 +27,21 @@ async function walk(directory) {
   }))).flat();
 }
 
+const indexHtml = await readFile(resolve(dist, "index.html"), "utf8");
+const startupAssets = new Set(
+  [...indexHtml.matchAll(/(?:src|href)="([^"?#]+\.(?:js|css))"/g)]
+    .map((match) => resolve(dist, match[1].replace(/^\//, ""))),
+);
 const files = await walk(dist);
 for (const path of files) {
   const extension = extname(path);
   const content = await readFile(path);
-  if (budgets.has(extension)) {
-    totals.set(extension, totals.get(extension) + gzipSync(content).byteLength);
+  if (totalBudgets.has(extension)) {
+    const compressedBytes = gzipSync(content).byteLength;
+    totals.set(extension, totals.get(extension) + compressedBytes);
+    if (startupAssets.has(resolve(path))) {
+      startupTotals.set(extension, startupTotals.get(extension) + compressedBytes);
+    }
   }
   // React and SVG libraries embed documentation/namespace URL constants in
   // JavaScript. They are not network requests. The offline shell gate checks
@@ -38,11 +55,20 @@ for (const path of files) {
   }
 }
 
-for (const [extension, maximum] of budgets) {
+for (const [extension, maximum] of startupBudgets) {
+  const actual = startupTotals.get(extension);
+  if (actual > maximum) {
+    throw new Error(
+      `startup ${extension} gzip budget exceeded: ${actual} bytes > ${maximum} bytes`,
+    );
+  }
+}
+
+for (const [extension, maximum] of totalBudgets) {
   const actual = totals.get(extension);
   if (actual > maximum) {
     throw new Error(
-      `${extension} gzip budget exceeded: ${actual} bytes > ${maximum} bytes`,
+      `total ${extension} gzip budget exceeded: ${actual} bytes > ${maximum} bytes`,
     );
   }
 }
@@ -67,5 +93,5 @@ if (typeof developmentCsp !== "string" ||
 }
 
 console.log(
-  `bundle budget passed: JS ${(totals.get(".js") / 1024).toFixed(2)} KiB gzip, CSS ${(totals.get(".css") / 1024).toFixed(2)} KiB gzip`,
+  `bundle budget passed: startup JS ${(startupTotals.get(".js") / 1024).toFixed(2)} KiB, CSS ${(startupTotals.get(".css") / 1024).toFixed(2)} KiB; total JS ${(totals.get(".js") / 1024).toFixed(2)} KiB, CSS ${(totals.get(".css") / 1024).toFixed(2)} KiB gzip`,
 );

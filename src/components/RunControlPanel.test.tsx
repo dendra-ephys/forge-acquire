@@ -1,8 +1,20 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import type { RunOutputState, RunOutputSummary } from "../core/runOutputState";
 import { RunControlPanel, type RunControlPanelProps } from "./RunControlPanel";
 
 const noop = () => undefined;
+
+function output(state: RunOutputState, label = "尚未记录", detail = ""): RunOutputSummary {
+  return {
+    state,
+    label,
+    detail,
+    phaseLabel: state.toUpperCase(),
+    compactLabel: state === "nwb_saved" ? "SAVED" : state.toUpperCase(),
+    urgent: state === "failed" || state === "raw_retained",
+  };
+}
 
 function renderPanel(overrides: Partial<RunControlPanelProps> = {}): string {
   const props: RunControlPanelProps = {
@@ -18,7 +30,7 @@ function renderPanel(overrides: Partial<RunControlPanelProps> = {}): string {
     recordingArmed: false,
     recording: false,
     recordingStopped: false,
-    durabilityProven: false,
+    runOutput: output("idle"),
     finalized: false,
     recoveryRequired: false,
     canConnect: false,
@@ -32,7 +44,6 @@ function renderPanel(overrides: Partial<RunControlPanelProps> = {}): string {
     previewDeviceName: "Direct Pod 1",
     canStart: false,
     canStopRecording: false,
-    canFinalize: false,
     canRecover: false,
     canAcknowledgeFailed: false,
     onConnect: noop,
@@ -43,7 +54,6 @@ function renderPanel(overrides: Partial<RunControlPanelProps> = {}): string {
     onSetupMultiRecording: noop,
     onStart: noop,
     onStopRecording: noop,
-    onFinalize: noop,
     onRecover: noop,
     onAcknowledgeFailed: noop,
     onCollapse: noop,
@@ -62,6 +72,81 @@ describe("RunControlPanel", () => {
     expect(markup).toContain("开始记录 · 1 台");
     expect(markup.match(/instrument-button--record"/g)).toHaveLength(1);
     expect(markup).not.toContain("同步");
+  });
+
+  it("exposes one end-and-save action without a second Finalize command", () => {
+    const markup = renderPanel({
+      phase: "recording",
+      phaseLabel: "RECORDING",
+      runId: "ACTIVE-RUN",
+      recording: true,
+      canStopRecording: true,
+    });
+
+    expect(markup.match(/结束并保存/g)).not.toHaveLength(0);
+    expect(markup.match(/instrument-button--stop"/g)).toHaveLength(1);
+    expect(markup).toContain("一次请求完成停止输入、排空，并生成、验证和发布最终 NWB");
+    expect(markup).not.toContain(">Finalize</button>");
+    expect(markup).not.toContain("封存 Run");
+  });
+
+  it("keeps the compound operation pending until the final NWB receipt is proven", () => {
+    const saving = renderPanel({
+      phase: "finalizing",
+      phaseLabel: "ENDING / NWB",
+      runId: "ACTIVE-RUN",
+      recordingStopped: true,
+      runOutput: output("saving", "正在结束并生成 NWB", "正在生成最终 NWB"),
+      finalized: false,
+    });
+    expect(saving).toContain("正在结束并生成 NWB");
+    expect(saving).toContain("最终 NWB 回执到达前不显示保存成功");
+
+    const rawRetained = renderPanel({
+      phase: "finalized",
+      phaseLabel: "NWB INCOMPLETE",
+      runId: "INCOMPLETE-RUN",
+      recordingStopped: true,
+      runOutput: output(
+        "raw_retained",
+        "原始数据已保留 · NWB 未完成",
+        "只确认原始 journal 已封存；尚无最终 NWB 发布回执。",
+      ),
+      finalized: true,
+    });
+    expect(rawRetained).toContain("原始数据已保留 · NWB 未完成");
+    expect(rawRetained).toContain("尚无最终 NWB 发布回执");
+    expect(rawRetained).not.toContain("NWB 已保存");
+
+    const saved = renderPanel({
+      phase: "finalized",
+      phaseLabel: "NWB SAVED",
+      runId: "SEALED-RUN",
+      recordingStopped: true,
+      runOutput: output(
+        "nwb_saved",
+        "NWB 已保存",
+        "已生成、验证并以新文件发布：F:\\ForgeRuns\\FORGE-RUN-001.nwb",
+      ),
+      finalized: true,
+    });
+    expect(saved).toContain("NWB 已保存");
+    expect(saved).toContain("FORGE-RUN-001.nwb");
+  });
+
+  it("keeps a completed Browser mock visibly separate from a saved NWB", () => {
+    const markup = renderPanel({
+      phase: "finalized",
+      phaseLabel: "SIMULATION COMPLETE",
+      runId: "MOCK-RUN",
+      recordingStopped: true,
+      runOutput: output("mock_complete", "模拟流程完成", "未创建记录文件，也未生成 NWB。"),
+      finalized: true,
+    });
+
+    expect(markup).toContain("模拟流程完成");
+    expect(markup).toContain("未创建记录文件，也未生成 NWB");
+    expect(markup).not.toContain("NWB SAVED");
   });
 
   it("offers an honest failed-Run close action without a rejected Recover button", () => {

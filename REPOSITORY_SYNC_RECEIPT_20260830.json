@@ -1,0 +1,79 @@
+{
+  "schema": "dendra.product_repository_sync_receipt.v1",
+  "created_at_utc": "2026-08-30T05:33:45.8693056Z",
+  "product": "host_app",
+  "repository": "dendra-ephys/dendra-software-host-app",
+  "branch": "codex/sync-20260830",
+  "base_product_commit": "ab531d677cb9d1b49d38e34a9509125d51ff8822",
+  "source_freeze": {
+    "repository": "dendra-ephys/dendra-forge",
+    "branch": "codex/sync-20260830-source-freeze",
+    "commit": "f90c5ce02244f055d6af56fc935d2e659cf06ef3",
+    "receipt": "Forge/host_app/SOURCE_FREEZE_RECEIPT_20260830.json"
+  },
+  "untracked_inventory": {
+    "artifact": "UNTRACKED_INVENTORY_20260830.json",
+    "sha256": "720592462B4544E9827C7D56A073115C4AE61B88E22567DA1756EF04806C0BBF",
+    "entries": 9048,
+    "regular_files": 9044,
+    "bytes": 3754325320,
+    "receiver_pod_excluded_entries": 263
+  },
+  "selection": {
+    "included": [
+      "Forge Acquire embedded run-directory browser",
+      "Preview and Recording state separation",
+      "Host UI, Tauri, adapter, protocol, and self-contained contract dependencies required by the selected Host changes"
+    ],
+    "excluded": [
+      "Receiver Pod product repository and Forge/receiver_pod/**",
+      "current VSTIM-enriched catalog coupled to the excluded Receiver Pod scope",
+      "src-tauri/gen/**",
+      "**/*.tsbuildinfo",
+      "**/target*/**",
+      "**/node_modules/**",
+      "**/dist/**"
+    ],
+    "boundary_note": "Host-owned direct_pod_* integration code remains Host App source; no Receiver Pod product-repository path is included."
+  },
+  "product_local_dependencies": {
+    "component_inventory_sha256": "C37F2337B5FB6F75CAEF85BA3142A3B641B6FC0FD28B2F7DFE028FC19F534BA1",
+    "channel_maps_sha256": "3C219D3B82127E8FE15BAD972CB1A4AEFE9DD7E23B9449C85F2794C28BB3E70C",
+    "product_matrix_sha256": "480732594A381DD1C237D1AC1AF792E017B360902572ADEC6840A47399F564D1",
+    "catalog_bundle_sha256": "8493DCA2170E66E0DA3DCCA2AA0198CD0471C79C6B93BF3C053CC135DE99EE4C",
+    "worker_token_lease_golden_sha256": "415898EED93071C76EF26855849A15ED58ACF92BD1340A9C82B1E3AFA67B0651"
+  },
+  "repository_tools": {
+    "exporter_sha256": "441D348289592F8D909DB9E2F40BEF1CFE5508428062AF64D2DA93B0799358C0",
+    "canonical_snapshot_tool_sha256": "6AFD302CD7251BD53E73B58914E1596496F9BF424B1D250D09D9791B5AE5E2A1"
+  },
+  "removed_generated_tracked_paths": [
+    "src-tauri/gen/schemas/acl-manifests.json",
+    "src-tauri/gen/schemas/capabilities.json",
+    "src-tauri/gen/schemas/desktop-schema.json",
+    "src-tauri/gen/schemas/windows-schema.json",
+    "tsconfig.app.tsbuildinfo",
+    "tsconfig.node.tsbuildinfo"
+  ],
+  "canonical_snapshot": {
+    "path": "SOURCE_SNAPSHOT_SHA256.json",
+    "schema": "dendra.git_snapshot.v2",
+    "basis": "canonical_git_blob_bytes",
+    "self_excluded": true
+  },
+  "validation": [
+    "npm install: 112 packages, 0 vulnerabilities",
+    "vitest: 18 files and 117 tests passed",
+    "vite build: 1604 modules transformed",
+    "bundle budget: startup JS 97.68 KiB gzip and CSS 9.81 KiB gzip",
+    "tauri check passed with warnings only",
+    "cargo fmt --check passed",
+    "cargo test --all-targets: 6 tests passed",
+    "cargo clippy -D warnings exited 0; dependency dead-code warnings were emitted",
+    "protocol Rust: 6 unit and 9 golden tests passed",
+    "protocol Python: 24 tests passed",
+    "protocol C++: 16 golden vectors passed",
+    "repository inventory, exporter, and canonical snapshot tooling: 16 tests passed"
+  ],
+  "release_status": "engineering_working_state_not_product_release"
+}

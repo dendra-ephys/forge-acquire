@@ -4,8 +4,12 @@
   "repository": "dendra-ephys/dendra-software-host-app",
   "visibility_required": "PRIVATE",
   "source_repository": "dendra-ephys/dendra-forge",
-  "source_head": "4b30856dfe11bbc1e3c0dcb1a6e6b0d2255534e4",
-  "source_worktree_dirty": true,
-  "exported_at_utc": "2026-08-27T12:44:10.028859+00:00",
+  "source_branch": "codex/sync-20260830-source-freeze",
+  "source_head": "f90c5ce02244f055d6af56fc935d2e659cf06ef3",
+  "source_worktree_dirty": false,
+  "base_product_commit": "ab531d677cb9d1b49d38e34a9509125d51ff8822",
+  "untracked_inventory_sha256": "720592462B4544E9827C7D56A073115C4AE61B88E22567DA1756EF04806C0BBF",
+  "sync_receipt": "REPOSITORY_SYNC_RECEIPT_20260830.json",
+  "exported_at_utc": "2026-08-30T05:33:45.8693056Z",
   "release_status": "engineering_working_state_not_product_release"
 }

@@ -91,10 +91,10 @@ describe("MockAcquireAdapter", () => {
     expect(await adapter.readSnapshot()).toMatchObject({ lifecycle: "recording", previewState: "live" });
   }
 
-  async function reachRecordingStopped(): Promise<void> {
+  async function reachFinalized(): Promise<void> {
     await reachRecording();
-    await accept({ type: "stop_recording" }, 2);
-    expect(await adapter.readSnapshot()).toMatchObject({ lifecycle: "recording_stopped", previewState: "live" });
+    await accept({ type: "stop_recording" }, 4);
+    expect(await adapter.readSnapshot()).toMatchObject({ lifecycle: "finalized", previewState: "live" });
   }
 
   it("rejects explicit control disconnect while a Run is active", async () => {
@@ -136,8 +136,7 @@ describe("MockAcquireAdapter", () => {
     await accept({ type: "preflight", plan: await runPlan() }, 2);
     await accept({ type: "arm_recording" }, 2);
     await accept({ type: "start_recording" }, 2);
-    await accept({ type: "stop_recording" }, 2);
-    await accept({ type: "finalize_run" }, 2);
+    await accept({ type: "stop_recording" }, 4);
 
     expect(states).toEqual([
       { lifecycle: "disconnected", previewState: "stopped" },
@@ -174,7 +173,12 @@ describe("MockAcquireAdapter", () => {
         durability: { status: "idle" },
       },
     });
-    expect(first).toMatchObject({ runId: null, runEpoch: null, containsRawSamples: false });
+    expect(first).toMatchObject({
+      runId: null,
+      runEpoch: null,
+      containsContinuousRawSamples: false,
+      containsEventWaveformSnippets: false,
+    });
 
     await vi.advanceTimersByTimeAsync(1_000);
     const second = adapter.previewSource.getLatest();
@@ -184,7 +188,7 @@ describe("MockAcquireAdapter", () => {
     expect(snapshot.evidence.acquisition.status).toBe("idle");
   });
 
-  it("keeps Preview live after Stop Recording without claiming durable data", async () => {
+  it("keeps Preview live while one End and Save command advances through pending states to a durable seal", async () => {
     await reachRecording();
     expect((await adapter.readSnapshot()).load).toMatchObject({
       sourceBufferPercent: 11,
@@ -213,16 +217,30 @@ describe("MockAcquireAdapter", () => {
     expect(snapshot.load.sourceBufferPercent).toBe(11);
     expect(snapshot.load.writerQueuePercent).toBe(31);
 
+    await vi.advanceTimersByTimeAsync(TRANSITION_MS);
+    snapshot = await adapter.readSnapshot();
+    expect(snapshot.lifecycle).toBe("finalizing");
+    expect(snapshot.previewState).toBe("live");
+    expect(snapshot.evidence.durability.status).toBe("pending");
+    expect(snapshot.runReceipt?.status).toBe("finalizing");
+
+    await vi.advanceTimersByTimeAsync(TRANSITION_MS);
+    snapshot = await adapter.readSnapshot();
+    expect(snapshot.lifecycle).toBe("finalized");
+    expect(snapshot.previewState).toBe("live");
+    expect(snapshot.evidence.durability.status).toBe("proven");
+    expect(snapshot.runReceipt?.status).toBe("finalized");
+
     await vi.advanceTimersByTimeAsync(1_000);
     const frameAfterStop = adapter.previewSource.getLatest();
     expect(frameAfterStop?.sequence).toBeGreaterThan(frameBeforeStop?.sequence ?? 0n);
     expect(frameAfterStop).toMatchObject({ runId: null, runEpoch: null });
   });
 
-  it("keeps Preview advancing through Finalize without attributing later frames to the sealed Run", async () => {
-    await reachRecordingStopped();
+  it("keeps Preview advancing after End and Save without attributing later frames to the sealed Run", async () => {
+    await reachRecording();
     const beforeFinalize = adapter.previewSource.getLatest();
-    await accept({ type: "finalize_run" }, 2);
+    await accept({ type: "stop_recording" }, 4);
     expect(await adapter.readSnapshot()).toMatchObject({ lifecycle: "finalized", previewState: "live" });
 
     await vi.advanceTimersByTimeAsync(1_000);
@@ -245,6 +263,7 @@ describe("MockAcquireAdapter", () => {
     expect(await adapter.readSnapshot()).toMatchObject({ lifecycle: "recording", previewState: "stopped" });
 
     await startPreview();
+    await adapter.faultController.inject({ type: "durability_failure", reason: "fsync barrier failed" });
     const stopRecording = await adapter.execute({ type: "stop_recording", reason: "operator" });
     const stopPreview = await adapter.execute({ type: "stop_preview", reason: "operator" });
     expect(stopRecording).toMatchObject({ accepted: true, requestedState: "stop_requested" });
@@ -254,9 +273,9 @@ describe("MockAcquireAdapter", () => {
     await vi.advanceTimersByTimeAsync(TRANSITION_MS);
     expect(await adapter.readSnapshot()).toMatchObject({ lifecycle: "recording_stopped", previewState: "stopped" });
 
+    await vi.advanceTimersByTimeAsync(TRANSITION_MS * 2);
+    expect(await adapter.readSnapshot()).toMatchObject({ lifecycle: "recovery_required", previewState: "stopped" });
     await startPreview();
-    await adapter.faultController.inject({ type: "durability_failure", reason: "fsync barrier failed" });
-    await accept({ type: "finalize_run" }, 2);
     expect(await adapter.readSnapshot()).toMatchObject({ lifecycle: "recovery_required", previewState: "live" });
     await accept({ type: "stop_preview", reason: "operator" }, 2);
     expect(await adapter.readSnapshot()).toMatchObject({ lifecycle: "recovery_required", previewState: "stopped" });
@@ -352,23 +371,28 @@ describe("MockAcquireAdapter", () => {
   });
 
   it("enters recovery_required on durability failure and finalizes only after recovery", async () => {
-    await reachRecordingStopped();
+    await reachRecording();
     await adapter.faultController.inject({ type: "durability_failure", reason: "fsync barrier failed" });
-    expect((await adapter.readSnapshot()).evidence.durability.status).toBe("failed");
+    expect((await adapter.readSnapshot()).evidence.durability).toMatchObject({
+      status: "active",
+      summary: expect.stringContaining("armed for the next End and Save"),
+    });
 
-    await accept({ type: "finalize_run" }, 2);
+    await accept({ type: "stop_recording" }, 4);
     let snapshot = await adapter.readSnapshot();
     expect(snapshot.lifecycle).toBe("recovery_required");
     expect(snapshot.runReceipt?.status).toBe("recovery_required");
     expect(snapshot.evidence.durability.status).toBe("failed");
 
     await adapter.faultController.clear("durability_failure");
-    await accept({ type: "recover_run" }, 1);
+    const recovery = await adapter.execute({ type: "recover_run" });
+    expect(recovery).toMatchObject({ accepted: true, requestedState: "finalizing" });
+    await vi.advanceTimersByTimeAsync(TRANSITION_MS);
     snapshot = await adapter.readSnapshot();
-    expect(snapshot.lifecycle).toBe("recording_stopped");
+    expect(snapshot.lifecycle).toBe("finalizing");
     expect(snapshot.evidence.durability.status).toBe("pending");
 
-    await accept({ type: "finalize_run" }, 2);
+    await vi.advanceTimersByTimeAsync(TRANSITION_MS);
     snapshot = await adapter.readSnapshot();
     expect(snapshot.lifecycle).toBe("finalized");
     expect(snapshot.evidence.durability.status).toBe("proven");
@@ -450,7 +474,7 @@ describe("MockAcquireAdapter", () => {
   });
 
   it("reserves create-new no-overwrite recording targets with monotonic Run suffixes", async () => {
-    await reachRecordingStopped();
+    await reachFinalized();
     let snapshot = await adapter.readSnapshot();
     expect(snapshot.recordingTarget).toMatchObject({
       reservationId: "MOCK-TARGET-000001",
@@ -468,7 +492,6 @@ describe("MockAcquireAdapter", () => {
     });
     expect(snapshot.runReceipt?.recordingTarget).toEqual(snapshot.recordingTarget);
 
-    await accept({ type: "finalize_run" }, 2);
     await accept({ type: "preflight", plan: await runPlan() }, 2);
     snapshot = await adapter.readSnapshot();
     expect(snapshot).toMatchObject({
@@ -621,7 +644,8 @@ describe("MockAcquireAdapter", () => {
     const common = {
       scope: "mock",
       synthetic: true,
-      containsRawSamples: false,
+      containsContinuousRawSamples: false,
+      containsEventWaveformSnippets: false,
       podKey: "MOCK-DIRECT-01",
     };
     expect(adapter.previewSource.getLatest()).toMatchObject({
@@ -649,7 +673,8 @@ describe("MockAcquireAdapter", () => {
       inputChannelCount: 32,
       channelStart: 8,
       channelCount: 8,
-      containsRawSamples: false,
+      containsContinuousRawSamples: false,
+      containsEventWaveformSnippets: false,
       valueUnit: "microvolt",
       valueUnitScope: "mock",
       previewFreshness: "current",
@@ -673,14 +698,15 @@ describe("MockAcquireAdapter", () => {
     });
     const spike = adapter.previewSource.getLatest();
     expect(spike).toMatchObject({
-      encoding: "spike_preview_v2",
+      encoding: "spike_preview_v3",
       signalKind: "spike",
       podKey: "MOCK-DIRECT-01",
       windowSeconds: 2,
       inputChannelCount: 32,
       channelStart: 0,
       channelCount: 8,
-      containsRawSamples: false,
+      containsContinuousRawSamples: false,
+      containsEventWaveformSnippets: true,
       sorting: "unsorted",
       selectedChannel: 0,
       accounting: {
@@ -688,7 +714,7 @@ describe("MockAcquireAdapter", () => {
         maxReturnedEvents: 64,
       },
     });
-    if (spike?.encoding !== "spike_preview_v2") throw new Error("expected spike preview frame");
+    if (spike?.encoding !== "spike_preview_v3") throw new Error("expected spike preview frame");
     expect(spike.channelActivity).toHaveLength(32);
     expect(spike.channelActivity.map((channel) => channel.channel)).toEqual(
       Array.from({ length: 32 }, (_, channel) => channel),
@@ -725,16 +751,44 @@ describe("MockAcquireAdapter", () => {
       .filter((channel) => channel.observedEventCount > 0)
       .map((channel) => channel.channel);
     expect(new Set(spike.raster.map((event) => event.channel))).toEqual(new Set(activeBankChannels));
-    const waveform = spike.selectedChannelWaveform;
-    expect(waveform?.channel).toBe(0);
-    expect(waveform?.thresholdValue).toBeNull();
-    expect(waveform?.preTriggerSamples).toBe(5);
-    expect(waveform?.meanValues).toHaveLength(11);
-    expect(waveform?.p10Values).toHaveLength(11);
-    expect(waveform?.p90Values).toHaveLength(11);
-    expect(waveform?.meanValues.every((value, index) =>
-      (waveform.p10Values[index] ?? Number.POSITIVE_INFINITY) <= value
-      && value <= (waveform.p90Values[index] ?? Number.NEGATIVE_INFINITY))).toBe(true);
+    const waveformWindow = spike.selectedChannelWaveforms;
+    expect(waveformWindow).toMatchObject({
+      retentionSamples: 60_000n,
+      coverage: "complete",
+      reasonCode: null,
+      observedEventCount: spike.channelActivity[0].observedEventCount,
+      returnedEventCount: spike.channelActivity[0].observedEventCount,
+    });
+    expect(waveformWindow.events).toHaveLength(waveformWindow.returnedEventCount);
+    expect(new Set(waveformWindow.events.map((event) => event.eventId)).size)
+      .toBe(waveformWindow.events.length);
+    for (const event of waveformWindow.events) {
+      expect(event.channel).toBe(0);
+      expect(event.centerSample).toBeGreaterThanOrEqual(spike.sourceSampleStart!);
+      expect(event.centerSample).toBeLessThan(spike.sourceSampleEndExclusive!);
+      expect(event.eventId.endsWith(`-${event.centerSample}`)).toBe(true);
+      expect(event.snippetSampleStart).toBe(event.centerSample - 5n);
+      expect(event.snippetSampleEndExclusive).toBe(event.centerSample + 6n);
+      expect(event.snippetSampleEndExclusive - event.snippetSampleStart).toBe(11n);
+      expect(event.preTriggerSamples).toBe(5);
+      expect(event.values).toHaveLength(11);
+    }
+    const waveformStats = spike.selectedChannelWaveformStats;
+    expect(waveformStats?.channel).toBe(0);
+    expect(waveformStats?.thresholdValue).toBeNull();
+    expect(waveformStats?.contributingWaveformCount).toBe(waveformWindow.returnedEventCount);
+    expect(waveformStats?.meanValues).toHaveLength(11);
+    expect(waveformStats?.p10Values).toHaveLength(11);
+    expect(waveformStats?.p90Values).toHaveLength(11);
+    expect(waveformStats?.meanValues.every((value, index) =>
+      (waveformStats.p10Values[index] ?? Number.POSITIVE_INFINITY) <= value
+      && value <= (waveformStats.p90Values[index] ?? Number.NEGATIVE_INFINITY))).toBe(true);
+    waveformStats?.meanValues.forEach((value, point) => {
+      expect(value).toBeCloseTo(waveformWindow.events.reduce(
+        (sum, event) => sum + (event.values[point] ?? 0),
+        0,
+      ) / waveformWindow.events.length, 12);
+    });
     expect((await adapter.readSnapshot()).lifecycle).toBe("recording");
 
     await adapter.faultController.inject({ type: "counter_gap", missingSamples: 17 });
@@ -762,7 +816,7 @@ describe("MockAcquireAdapter", () => {
       faults: [{ code: "counter_gap", latched: true }],
     });
 
-    expect(await adapter.execute({ type: "finalize_run" })).toMatchObject({ accepted: false });
+    expect(await adapter.execute({ type: "stop_recording" })).toMatchObject({ accepted: false });
     expect(await adapter.execute({ type: "recover_run" })).toMatchObject({
       accepted: false,
       reasonCode: "RECOVERY_BLOCKED",
@@ -814,19 +868,28 @@ describe("MockAcquireAdapter", () => {
     expect(topologyInput?.evidenceHash).toBe(model.inputConfigurationHash(32, "MOCK-LINEAR-32"));
 
     const spike = frames[2];
-    if (spike.encoding !== "spike_preview_v2") throw new Error("expected spike frame");
+    if (spike.encoding !== "spike_preview_v3") throw new Error("expected spike frame");
     const centers = [...model.eventCentersInRange(
       0,
       spike.sourceSampleStart!,
       spike.sourceSampleEndExclusive!,
-    )].slice(0, 64);
+    )];
     const expectedWaveforms = centers.map((center) => model.waveformAtEvent(0, center));
     const expectedMean = Array.from({ length: 11 }, (_, point) => expectedWaveforms.reduce(
       (sum, waveform) => sum + (waveform[point] ?? 0),
       0,
     ) / expectedWaveforms.length * SYNTHETIC_PREVIEW_MICROVOLTS_PER_COUNT);
-    expect(spike.selectedChannelWaveform?.contributingWaveformCount).toBe(centers.length);
-    spike.selectedChannelWaveform?.meanValues.forEach((value, point) => {
+    expect(spike.selectedChannelWaveforms.coverage).toBe("complete");
+    expect(spike.selectedChannelWaveforms.observedEventCount).toBe(centers.length);
+    expect(spike.selectedChannelWaveforms.returnedEventCount).toBe(centers.length);
+    expect(spike.selectedChannelWaveforms.events.map((event) => event.centerSample)).toEqual(centers);
+    expect(spike.selectedChannelWaveforms.events.map((event) => event.values)).toEqual(
+      expectedWaveforms.map((waveform) => waveform.map(
+        (value) => value * SYNTHETIC_PREVIEW_MICROVOLTS_PER_COUNT,
+      )),
+    );
+    expect(spike.selectedChannelWaveformStats?.contributingWaveformCount).toBe(centers.length);
+    spike.selectedChannelWaveformStats?.meanValues.forEach((value, point) => {
       expect(value).toBeCloseTo(expectedMean[point] ?? Number.NaN, 12);
     });
     for (const event of spike.raster) {
@@ -854,7 +917,11 @@ describe("MockAcquireAdapter", () => {
       }
     };
     for (const frame of frames) {
-      expect(frame).toMatchObject({ synthetic: true, containsRawSamples: false });
+      expect(frame).toMatchObject({
+        synthetic: true,
+        containsContinuousRawSamples: false,
+        containsEventWaveformSnippets: frame.encoding === "spike_preview_v3",
+      });
       visit(frame);
     }
   });
@@ -872,11 +939,23 @@ describe("MockAcquireAdapter", () => {
         selectedChannel: 31,
       });
       const frame = adapter.previewSource.getLatest();
-      if (frame?.encoding !== "spike_preview_v2") throw new Error("expected spike preview frame");
+      if (frame?.encoding !== "spike_preview_v3") throw new Error("expected spike preview frame");
       expect(frame.channelStart).toBe(24);
       expect(frame.channelCount).toBe(8);
       expect(frame.raster.every((event) => event.channel >= 24 && event.channel <= 31)).toBe(true);
-      expect(frame.selectedChannelWaveform?.channel).toBe(31);
+      expect(frame.selectedChannel).toBe(31);
+      expect(frame.selectedChannelWaveforms.coverage).toBe("complete");
+      expect(frame.selectedChannelWaveforms.retentionSamples).toBe(
+        BigInt(30_000 * windowSeconds),
+      );
+      expect(frame.selectedChannelWaveforms.returnedEventCount).toBe(
+        frame.selectedChannelWaveforms.observedEventCount,
+      );
+      expect(frame.selectedChannelWaveforms.events.every((event) => event.channel === 31)).toBe(true);
+      expect(frame.selectedChannelWaveformStats?.channel).toBe(31);
+      expect(frame.selectedChannelWaveformStats?.contributingWaveformCount).toBe(
+        frame.selectedChannelWaveforms.returnedEventCount,
+      );
       expect(frame.sourceSampleEndExclusive! - frame.sourceSampleStart!).toBe(
         BigInt(30_000 * windowSeconds),
       );
@@ -885,6 +964,101 @@ describe("MockAcquireAdapter", () => {
     expect(observed[0]).toBeLessThan(observed[1]);
     expect(observed[1]).toBeLessThan(observed[2]);
     expect((await adapter.readSnapshot()).lifecycle).toBe("recording");
+  });
+
+  it("returns all 100 selected-channel waveforms in a 10 s rolling window and keeps overlap IDs stable", async () => {
+    await reachRecording();
+    adapter.previewSource.setRequest({
+      podKey: "MOCK-DIRECT-01",
+      signalKind: "spike",
+      windowSeconds: 10,
+      channelStart: 24,
+      channelCount: 8,
+      selectedChannel: 31,
+    });
+    const first = adapter.previewSource.getLatest();
+    if (first?.encoding !== "spike_preview_v3") throw new Error("expected first spike preview frame");
+
+    expect(first.inputChannelCount).toBe(32);
+    expect(first.selectedChannel).toBe(31);
+    expect(first.containsContinuousRawSamples).toBe(false);
+    expect(first.containsEventWaveformSnippets).toBe(true);
+    expect(first.accounting.maxReturnedEvents).toBe(64);
+    expect(first.raster.length).toBeLessThanOrEqual(64);
+    expect(first.selectedChannelWaveforms).toMatchObject({
+      retentionSamples: 300_000n,
+      coverage: "complete",
+      reasonCode: null,
+      observedEventCount: 100,
+      returnedEventCount: 100,
+    });
+    expect(first.selectedChannelWaveforms.events).toHaveLength(100);
+    expect(first.selectedChannelWaveforms.returnedEventCount).toBeGreaterThan(
+      first.accounting.maxReturnedEvents,
+    );
+
+    const firstIds = new Set(first.selectedChannelWaveforms.events.map((event) => event.eventId));
+    expect(firstIds.size).toBe(100);
+    for (const event of first.selectedChannelWaveforms.events) {
+      expect(event.channel).toBe(31);
+      expect(event.eventId.endsWith(`-${event.centerSample}`)).toBe(true);
+      expect(event.centerSample).toBeGreaterThanOrEqual(first.sourceSampleStart!);
+      expect(event.centerSample).toBeLessThan(first.sourceSampleEndExclusive!);
+      expect(event.snippetSampleStart).toBe(event.centerSample - BigInt(event.preTriggerSamples));
+      expect(event.snippetSampleEndExclusive - event.snippetSampleStart).toBe(
+        BigInt(event.values.length),
+      );
+    }
+
+    const stats = first.selectedChannelWaveformStats;
+    if (stats === null) throw new Error("selected-channel waveform statistics missing");
+    expect(stats).toMatchObject({
+      channel: 31,
+      contributingWaveformCount: 100,
+    });
+    stats.meanValues.forEach((mean, point) => {
+      const values = first.selectedChannelWaveforms.events
+        .map((event) => event.values[point] ?? 0)
+        .sort((left, right) => left - right);
+      expect(mean).toBeCloseTo(
+        values.reduce((sum, value) => sum + value, 0) / values.length,
+        12,
+      );
+      expect(stats.p10Values[point]).toBe(values[Math.floor((values.length - 1) * 0.1)]);
+      expect(stats.p90Values[point]).toBe(values[Math.floor((values.length - 1) * 0.9)]);
+    });
+
+    await vi.advanceTimersByTimeAsync(11_000);
+    const second = adapter.previewSource.getLatest();
+    if (second?.encoding !== "spike_preview_v3") throw new Error("expected second spike preview frame");
+    expect(second.sequence).toBeGreaterThan(first.sequence);
+    expect(second.selectedChannelWaveforms).toMatchObject({
+      coverage: "complete",
+      observedEventCount: 100,
+      returnedEventCount: 100,
+      retentionSamples: 300_000n,
+    });
+    const secondIds = new Set(second.selectedChannelWaveforms.events.map((event) => event.eventId));
+    const overlappingIds = [...firstIds].filter((eventId) => secondIds.has(eventId));
+    const expectedOverlap = [...new SyntheticNeuralModel({ seed: SYNTHETIC_DEFAULT_SEED })
+      .eventCentersInRange(
+        31,
+        first.sourceSampleStart! > second.sourceSampleStart!
+          ? first.sourceSampleStart!
+          : second.sourceSampleStart!,
+        first.sourceSampleEndExclusive! < second.sourceSampleEndExclusive!
+          ? first.sourceSampleEndExclusive!
+          : second.sourceSampleEndExclusive!,
+      )];
+    expect(overlappingIds).toHaveLength(expectedOverlap.length);
+    expect(overlappingIds.length).toBeGreaterThan(0);
+    expect(overlappingIds.length).toBeLessThan(100);
+    for (const eventId of overlappingIds) {
+      const previous = first.selectedChannelWaveforms.events.find((event) => event.eventId === eventId);
+      const current = second.selectedChannelWaveforms.events.find((event) => event.eventId === eventId);
+      expect(current?.centerSample).toBe(previous?.centerSample);
+      expect(current?.values).toEqual(previous?.values);
+    }
   });
 
   it("keeps the preview bounded for a 128-channel fixture", async () => {
@@ -932,13 +1106,28 @@ describe("MockAcquireAdapter", () => {
         selectedChannel: 127,
       });
       const frame = large.previewSource.getLatest();
-      if (frame?.encoding !== "spike_preview_v2") throw new Error("expected spike preview frame");
+      if (frame?.encoding !== "spike_preview_v3") throw new Error("expected spike preview frame");
       expect(frame.inputChannelCount).toBe(128);
       expect(frame.channelActivity).toHaveLength(128);
       expect(frame.channelActivity.at(-1)?.channel).toBe(127);
       expect(frame.raster.length).toBeLessThanOrEqual(64);
       expect(frame.raster.every((event) => event.channel >= 120 && event.channel <= 127)).toBe(true);
-      expect(frame.selectedChannelWaveform?.channel).toBe(127);
+      expect(frame.selectedChannel).toBe(127);
+      expect(frame.selectedChannelWaveforms).toMatchObject({
+        retentionSamples: 150_000n,
+        coverage: "complete",
+        reasonCode: null,
+        observedEventCount: frame.channelActivity[127].observedEventCount,
+        returnedEventCount: frame.channelActivity[127].observedEventCount,
+      });
+      expect(frame.selectedChannelWaveforms.events).toHaveLength(
+        frame.channelActivity[127].observedEventCount,
+      );
+      expect(frame.selectedChannelWaveforms.events.every((event) => event.channel === 127)).toBe(true);
+      expect(frame.selectedChannelWaveformStats).toMatchObject({
+        channel: 127,
+        contributingWaveformCount: frame.channelActivity[127].observedEventCount,
+      });
       expect((await large.readSnapshot()).lifecycle).toBe("recording");
     } finally {
       large.dispose();

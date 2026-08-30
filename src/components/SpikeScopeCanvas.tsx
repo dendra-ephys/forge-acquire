@@ -14,6 +14,40 @@ import type { SpikePreviewFrame } from "../adapters/acquireAdapter";
 
 const CHANNEL_BANK_SIZE = 8;
 
+export type SpikeWaveformDisplayMode = "all" | "statistics" | "latest";
+
+export function waveformWindowInvariant(frame: SpikePreviewFrame): boolean {
+  const window = frame.selectedChannelWaveforms;
+  if (window.coverage !== "complete"
+    || window.reasonCode !== null
+    || window.observedEventCount !== window.returnedEventCount
+    || window.returnedEventCount !== window.events.length
+    || window.retentionSamples <= 0n) return false;
+  const ids = new Set<string>();
+  let previousCenter: bigint | null = null;
+  const end = frame.sourceSampleEndExclusive;
+  for (const event of window.events) {
+    if (ids.has(event.eventId)
+      || event.channel !== frame.selectedChannel
+      || (previousCenter !== null && event.centerSample < previousCenter)
+      || (end !== null && (event.centerSample >= end || end - event.centerSample >= window.retentionSamples))) {
+      return false;
+    }
+    ids.add(event.eventId);
+    previousCenter = event.centerSample;
+  }
+  return true;
+}
+
+export function waveformEventsForMode(
+  frame: SpikePreviewFrame,
+  mode: SpikeWaveformDisplayMode,
+) {
+  const events = frame.selectedChannelWaveforms.events;
+  if (mode === "latest") return events.length === 0 ? [] : [events[events.length - 1]];
+  return mode === "all" ? events : [];
+}
+
 export interface SpikeScopeCanvasProps {
   frame: SpikePreviewFrame;
   expectedChannelCount: number | null;
@@ -70,6 +104,7 @@ export function SpikeScopeCanvas({
   const summaryId = useId();
   const [size, setSize] = useState<CanvasSize>({ width: 0, height: 0, dpr: 1 });
   const [announcement, setAnnouncement] = useState("");
+  const [waveformMode, setWaveformMode] = useState<SpikeWaveformDisplayMode>("all");
   const bankStart = frame.channelStart;
   const bankCount = frame.channelCount;
   const bankEnd = bankStart + Math.max(0, bankCount - 1);
@@ -80,6 +115,12 @@ export function SpikeScopeCanvas({
     && expectedChannelCount !== frame.inputChannelCount;
   const maxActivity = Math.max(1, ...frame.channelActivity.map((item) => item.observedEventCount));
   const activeChannelCount = frame.channelActivity.filter((item) => item.observedEventCount > 0).length;
+  const waveformWindow = frame.selectedChannelWaveforms;
+  const waveformInvariantValid = waveformWindowInvariant(frame);
+  const waveformEvents = waveformEventsForMode(frame, waveformMode);
+  const waveformTraceCount = waveformMode === "statistics"
+    ? frame.selectedChannelWaveformStats === null ? 0 : 1
+    : waveformEvents.length;
   const bankOptions = useMemo(
     () => Array.from({ length: bankTotal }, (_, index) => {
       const start = index * CHANNEL_BANK_SIZE;
@@ -147,7 +188,7 @@ export function SpikeScopeCanvas({
       context.font = "700 10px ui-monospace, Consolas, monospace";
       context.fillStyle = "#9eb3bd";
       context.fillText(`BANK RASTER · ${bankLabel(bankStart, bankCount)}`, 8, 16);
-      context.fillText(`${channelLabel(selectedChannel)} WAVEFORM`, waveformLeft, 16);
+      context.fillText(`${channelLabel(selectedChannel)} WAVEFORMS · ${waveformMode.toUpperCase()}`, waveformLeft, 16);
       context.textAlign = "right";
       context.fillStyle = paused ? "#fdba74" : "#72cfdf";
       context.fillText(paused ? "DISPLAY PAUSED" : unitLabel, size.width - 10, 16);
@@ -196,8 +237,8 @@ export function SpikeScopeCanvas({
       context.stroke();
       context.fillStyle = "#0c1722";
       context.fillRect(waveformLeft, top, waveformWidth, bottom - top);
-      const waveform = frame.selectedChannelWaveform;
-      if (waveform) {
+      const waveformStats = frame.selectedChannelWaveformStats;
+      if (waveformWindow.events.length > 0 && waveformInvariantValid) {
         const centerY = top + (bottom - top) * 0.46;
         const halfHeight = (bottom - top) * 0.45;
         const yFor = (value: number) => centerY
@@ -208,67 +249,100 @@ export function SpikeScopeCanvas({
         context.lineTo(waveformRight, yFor(0));
         context.stroke();
 
-        if (waveform.thresholdValue !== null) {
+        const threshold = waveformStats?.thresholdValue;
+        if (threshold != null) {
           context.save();
           context.setLineDash([5, 4]);
           context.strokeStyle = "#d9a647";
           context.beginPath();
-          context.moveTo(waveformLeft, yFor(waveform.thresholdValue));
-          context.lineTo(waveformRight, yFor(waveform.thresholdValue));
+          context.moveTo(waveformLeft, yFor(threshold));
+          context.lineTo(waveformRight, yFor(threshold));
           context.stroke();
           context.restore();
         }
 
-        const pointCount = Math.min(
-          waveform.meanValues.length,
-          waveform.p10Values.length,
-          waveform.p90Values.length,
-        );
-        const xFor = (index: number) => waveformLeft
-          + (index / Math.max(1, pointCount - 1)) * waveformWidth;
-        context.beginPath();
-        for (let index = 0; index < pointCount; index += 1) {
-          const x = xFor(index);
-          const y = yFor(waveform.p90Values[index]);
-          if (index === 0) context.moveTo(x, y);
-          else context.lineTo(x, y);
-        }
-        for (let index = pointCount - 1; index >= 0; index -= 1) {
-          context.lineTo(xFor(index), yFor(waveform.p10Values[index]));
-        }
-        context.closePath();
-        context.fillStyle = "rgba(74, 173, 203, 0.18)";
-        context.fill();
+        if (waveformMode === "statistics" && waveformStats) {
+          const pointCount = Math.min(
+            waveformStats.meanValues.length,
+            waveformStats.p10Values.length,
+            waveformStats.p90Values.length,
+          );
+          const xFor = (index: number) => waveformLeft
+            + (index / Math.max(1, pointCount - 1)) * waveformWidth;
+          context.beginPath();
+          for (let index = 0; index < pointCount; index += 1) {
+            const x = xFor(index);
+            const y = yFor(waveformStats.p90Values[index]);
+            if (index === 0) context.moveTo(x, y);
+            else context.lineTo(x, y);
+          }
+          for (let index = pointCount - 1; index >= 0; index -= 1) {
+            context.lineTo(xFor(index), yFor(waveformStats.p10Values[index]));
+          }
+          context.closePath();
+          context.fillStyle = "rgba(74, 173, 203, 0.18)";
+          context.fill();
 
-        context.strokeStyle = "#68d6e6";
-        context.lineWidth = 1.5;
-        context.beginPath();
-        waveform.meanValues.forEach((value, index) => {
-          const x = xFor(index);
-          const y = yFor(value);
-          if (index === 0) context.moveTo(x, y);
-          else context.lineTo(x, y);
-        });
-        context.stroke();
+          context.strokeStyle = "#68d6e6";
+          context.lineWidth = 1.7;
+          context.beginPath();
+          waveformStats.meanValues.forEach((value, index) => {
+            const x = xFor(index);
+            const y = yFor(value);
+            if (index === 0) context.moveTo(x, y);
+            else context.lineTo(x, y);
+          });
+          context.stroke();
+        } else {
+          const endSample = frame.sourceSampleEndExclusive;
+          waveformEvents.forEach((event, eventIndex) => {
+            const ageRatio = endSample === null
+              ? eventIndex / Math.max(1, waveformEvents.length - 1)
+              : clamp(Number(endSample - event.centerSample) / Number(waveformWindow.retentionSamples), 0, 1);
+            const newest = eventIndex === waveformEvents.length - 1;
+            const opacity = waveformMode === "latest"
+              ? 0.96
+              : clamp(0.22 + (1 - ageRatio) * 0.58 + (newest ? 0.14 : 0), 0.22, 0.96);
+            context.strokeStyle = `rgba(104, 214, 230, ${opacity.toFixed(3)})`;
+            context.lineWidth = newest ? 1.9 : 1.05;
+            context.beginPath();
+            event.values.forEach((value, index) => {
+              const x = waveformLeft
+                + (index / Math.max(1, event.values.length - 1)) * waveformWidth;
+              const y = yFor(value);
+              if (index === 0) context.moveTo(x, y);
+              else context.lineTo(x, y);
+            });
+            context.stroke();
+          });
+        }
 
         context.font = "600 9px ui-monospace, Consolas, monospace";
-        if (waveform.thresholdValue !== null) {
+        if (threshold != null) {
           context.fillStyle = "#d9a647";
-          context.fillText(`THR ${waveform.thresholdValue.toFixed(0)}`, waveformLeft + 5, yFor(waveform.thresholdValue) - 4);
+          context.fillText(`THR ${threshold.toFixed(0)}`, waveformLeft + 5, yFor(threshold) - 4);
         } else {
           context.fillStyle = "#8fa6b2";
           context.fillText("SYNTHETIC EVENT ORACLE · NO DETECTOR THRESHOLD", waveformLeft + 5, top + 12);
         }
         context.fillStyle = "#8fa6b2";
         context.fillText(
-          `n=${waveform.contributingWaveformCount}/${waveform.observedEventCount} · UNSORTED`,
+          waveformMode === "statistics"
+            ? `STATISTICS n=${waveformWindow.returnedEventCount} · MEAN / P10–P90`
+            : waveformMode === "latest"
+              ? `LATEST 1 / ${waveformWindow.returnedEventCount} · UNSORTED`
+              : `ALL ${waveformWindow.returnedEventCount} · TTL ${frame.windowSeconds.toFixed(1)} s · UNSORTED`,
           waveformLeft + 5,
           bottom - 5,
         );
       } else {
         context.font = "600 10px ui-monospace, Consolas, monospace";
-        context.fillStyle = "#7f929c";
-        context.fillText("NO EVENTS IN WINDOW", waveformLeft + 8, top + 24);
+        context.fillStyle = waveformInvariantValid ? "#7f929c" : "#f87171";
+        context.fillText(
+          waveformInvariantValid ? "NO EVENTS IN RETENTION WINDOW" : "WAVEFORM WINDOW COVERAGE FAULT",
+          waveformLeft + 8,
+          top + 24,
+        );
       }
 
       context.font = "500 9px ui-monospace, Consolas, monospace";
@@ -279,7 +353,21 @@ export function SpikeScopeCanvas({
       context.textAlign = "left";
     });
     return () => window.cancelAnimationFrame(render);
-  }, [bankCount, bankEnd, bankStart, frame, gainValue, paused, selectedChannel, size, unitLabel]);
+  }, [
+    bankCount,
+    bankEnd,
+    bankStart,
+    frame,
+    gainValue,
+    paused,
+    selectedChannel,
+    size,
+    unitLabel,
+    waveformEvents,
+    waveformInvariantValid,
+    waveformMode,
+    waveformWindow,
+  ]);
 
   const selectFromRaster = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -322,7 +410,7 @@ export function SpikeScopeCanvas({
           ["RASTER DRAWN", accounting.returnedRasterEventCount, "在 WebView 有界 raster 预算内实际绘制的事件"],
           ["DISPLAY OMITTED", accounting.sampledOutEventCount, "只从画面省略；源与分析覆盖必须仍为 COMPLETE"],
           ["SOURCE COVERAGE", frame.coverage.source.toUpperCase(), "当前 source sample range 是否完整；不能用事件丢失数替代"],
-          ["ANALYSIS COVERAGE", frame.coverage.analysis.toUpperCase(), "同一 source sample range 是否被完整分析；缺口必须给出 sample range 并进入故障"],
+          ["DETECTOR COVERAGE", frame.coverage.analysis.toUpperCase(), "同一 source sample range 是否被 spike detector 完整处理；缺口必须给出 sample range 并进入故障"],
         ].map(([label, value, title]) => (
           <div key={String(label)} title={String(title)}>
             <span>{label}</span>
@@ -357,6 +445,7 @@ export function SpikeScopeCanvas({
               style={activityStyle(activity.observedEventCount, maxActivity)}
               aria-label={`${channelLabel(activity.channel)} · ${activity.observedEventCount} 个合成 oracle 事件 · 点击查看该通道`}
               aria-pressed={activity.channel === selectedChannel}
+              tabIndex={activity.channel === selectedChannel ? 0 : -1}
               data-testid="spike-activity-channel"
               data-channel={activity.channel}
               title={`${channelLabel(activity.channel)} · ${activity.observedEventCount} oracle events · ${activity.rateHz.toFixed(1)} Hz · 点击切换显示通道`}
@@ -427,6 +516,31 @@ export function SpikeScopeCanvas({
             <ChevronRight size={16} aria-hidden="true" />
           </button>
         </div>
+        <div
+          className="spike-waveform-modes"
+          role="radiogroup"
+          aria-label="Waveform 显示模式"
+        >
+          {([
+            ["all", "全部"],
+            ["statistics", "统计"],
+            ["latest", "最新"],
+          ] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={waveformMode === mode}
+              className={waveformMode === mode ? "is-active" : ""}
+              onClick={() => {
+                setWaveformMode(mode);
+                setAnnouncement(`Waveform 显示模式：${label}`);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <span className="sr-only" aria-live="polite">{announcement}</span>
       </div>
 
@@ -437,7 +551,13 @@ export function SpikeScopeCanvas({
       ) : null}
       {!invariantValid ? (
         <div className="spike-contract-error" role="alert">
-          COVERAGE FAULT · source {frame.coverage.source} / analysis {frame.coverage.analysis}
+          COVERAGE FAULT · source {frame.coverage.source} / detector {frame.coverage.analysis}
+        </div>
+      ) : null}
+      {!waveformInvariantValid ? (
+        <div className="spike-contract-error" role="alert">
+          WAVEFORM WINDOW FAULT · {waveformWindow.reasonCode ?? "COUNT / ID / TTL INVARIANT"} ·
+          observed {waveformWindow.observedEventCount} / returned {waveformWindow.returnedEventCount}
         </div>
       ) : null}
 
@@ -445,7 +565,7 @@ export function SpikeScopeCanvas({
         <canvas
           ref={canvasRef}
           role="img"
-          aria-label={`Spike raster ${bankLabel(bankStart, bankCount)} and ${channelLabel(selectedChannel)} waveform summary. ${unitLabel}. Synthetic derived preview, not raw samples.`}
+          aria-label={`${channelLabel(selectedChannel)} ${waveformMode}; ${waveformWindow.returnedEventCount} waveforms; ${frame.windowSeconds}s TTL; ${unitLabel}; no raw stream.`}
           aria-describedby={summaryId}
           onPointerDown={selectFromRaster}
           data-testid="spike-raster-waveform"
@@ -453,6 +573,12 @@ export function SpikeScopeCanvas({
           data-bank-count={bankCount}
           data-frame-sequence={frame.sequence.toString()}
           data-window-seconds={frame.windowSeconds}
+          data-waveform-mode={waveformMode}
+          data-waveforms-observed={waveformWindow.observedEventCount}
+          data-waveforms-rendered={waveformTraceCount}
+          data-waveforms-omitted={waveformWindow.observedEventCount - waveformWindow.returnedEventCount}
+          data-waveform-retention-samples={waveformWindow.retentionSamples.toString()}
+          data-waveform-coverage={waveformWindow.coverage}
           data-source-sample-span={frame.sourceSampleStart === null || frame.sourceSampleEndExclusive === null
             ? "unknown"
             : (frame.sourceSampleEndExclusive - frame.sourceSampleStart).toString()}

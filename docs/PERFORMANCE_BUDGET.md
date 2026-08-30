@@ -9,6 +9,8 @@ The UI is not the data path. FT601/10GbE samples remain inside the Rust acquisit
 - immutable status snapshots at 5–10 Hz;
 - bounded event/marker pages;
 - already-decimated display envelopes over an ordered binary IPC channel;
+- bounded selected-channel event-aligned waveform windows and statistics, never the
+  continuous acquisition stream;
 - explicit display-drop counters that never masquerade as acquisition loss.
 
 Tauri JSON commands/events are reserved for low-rate control and state. They are not used for raw samples. The final trace path is Rust min/max decimation → binary Tauri channel → Canvas (and, if profiling justifies it, `OffscreenCanvas` in a worker). React owns controls and semantics; Canvas owns pixels.
@@ -31,10 +33,11 @@ Current measured bundle-gate output on 2026-08-26 is 77.65 KiB gzip JS and 5.16 
 |---|---:|
 | machine/status snapshots | 5 Hz normal, 10 Hz maximum |
 | health counters | 5 Hz |
-| bounded preview aggregates | up to 30 frames/s |
+| bounded preview frames, including selected-channel event windows | up to 30 frames/s |
 | React commits while streaming | no more than 10/s outside the trace surface |
 | trace history retained by UI | bounded visible window only |
-| raw sample bytes in WebView | 0 |
+| continuous raw acquisition-stream bytes in WebView | 0 |
+| selected-channel waveform retention | one source-sample TTL window (1/2/5 s), fixed capacity, complete-or-fault |
 | unbounded arrays/queues | 0 |
 
 Presentation cadence is not a data-integrity counter. If the WebView cannot present the
@@ -42,6 +45,12 @@ current bounded aggregate, the preview must become visibly `STALE` or pause and 
 from a newly identified complete source range. The UI must not report a reassuring
 `FRAME DROPS = N` value. Source and analysis coverage remain independently receipt-bound;
 any sample-range gap is a latched Run-integrity failure, never a presentation statistic.
+
+`spike_preview_v3` stores one bounded selected-channel event set per latest frame. The
+`全部波形`, `统计`, and `最新` controls change only the Canvas draw policy; they do not clone
+event arrays or accumulate another history. New event snippets are visible on the next bounded
+frame and expire by source-sample age. If the fixed capacity cannot return every observed
+selected-channel event, coverage fails visibly instead of silently omitting waveforms.
 
 ## Profiling gates
 
@@ -51,7 +60,7 @@ any sample-range gap is a latched Run-integrity failure, never a presentation st
 - 30-minute display run with bounded memory and no long task above 50 ms at p99;
 - resize, pause-display, channel selection, marker entry, and modal use during maximum-rate synthetic status replay;
 - keyboard-only and 100%, 125%, 150%, and 200% Windows scaling checks;
-- fault banners and the Run integrity rail remain readable at the minimum supported 1080 × 720 window.
+- at 1080 × 720 the compact verdict, data-continuity state, file-save state, and any recovery fault remain visible; opening technical details neither resizes the waveform workbench nor causes document-level horizontal scroll.
 
 The current simulator still uses React state to exercise the UI contract. It is not evidence that the production binary trace channel or performance gates have passed.
 
