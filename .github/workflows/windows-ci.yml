@@ -75,10 +75,10 @@ jobs:
         run: pixi run cargo fmt --manifest-path recording-daemon/Cargo.toml -- --check
 
       - name: Test Rust data plane
-        run: pixi run cargo test --locked --manifest-path recording-daemon/Cargo.toml --all-targets
+        run: pixi run cargo test --locked --manifest-path recording-daemon/Cargo.toml --all-targets -- --test-threads=1
 
       - name: Test Rust qualification configuration
-        run: pixi run cargo test --locked --manifest-path recording-daemon/Cargo.toml --all-targets --features qualification-harness
+        run: pixi run cargo test --locked --manifest-path recording-daemon/Cargo.toml --all-targets --features qualification-harness -- --test-threads=1
 
       - name: Build Windows installer
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/preview'
