@@ -155,7 +155,6 @@ function App() {
   const adapter = runtime.adapter;
   const mountedRef = useRef(false);
   const autoConnectRequestedRef = useRef(false);
-  const autoStartSyntheticPreviewRef = useRef(false);
   const [capabilities, setCapabilities] = useState<CapabilitySnapshot | null>(null);
   const [snapshot, setSnapshot] = useState<DaemonSnapshot | null>(null);
   const [lastCommand, setLastCommand] = useState<CommandReceipt | null>(null);
@@ -255,7 +254,6 @@ function App() {
     }
     if (autoConnectRequestedRef.current || topologyPods(snapshot.topology).length === 0) return;
     autoConnectRequestedRef.current = true;
-    autoStartSyntheticPreviewRef.current = snapshot.synthetic;
     void issue({ type: "connect" }).then((receipt) => {
       if (!receipt.accepted) autoConnectRequestedRef.current = false;
     });
@@ -416,6 +414,7 @@ function App() {
 
   const handleStartPreview = useCallback(() => {
     if (!snapshot || selectedPodKey === null) return;
+    setDisplayPaused(false);
     void issue({
       type: "start_preview",
       podKey: selectedPodKey,
@@ -423,15 +422,39 @@ function App() {
     });
   }, [issue, selectedPodKey, snapshot]);
 
-  useEffect(() => {
-    if (!autoStartSyntheticPreviewRef.current
-        || snapshot?.synthetic !== true
-        || snapshot.controlConnection !== "connected"
-        || snapshot.previewState !== "stopped"
-        || selectedPodKey === null) return;
-    autoStartSyntheticPreviewRef.current = false;
-    handleStartPreview();
-  }, [handleStartPreview, selectedPodKey, snapshot]);
+  const handleStartRecording = useCallback(() => {
+    if (!snapshot) return;
+    if (snapshot.lifecycle === "armed") {
+      void issue({ type: "start_recording" });
+      return;
+    }
+    if (["connected_idle", "finalized"].includes(snapshot.lifecycle)) {
+      handleOpenSingleRecordingSetup();
+    }
+  }, [handleOpenSingleRecordingSetup, issue, snapshot]);
+
+  const handleTogglePause = useCallback(async () => {
+    if (!snapshot) return;
+    const recording = snapshot.lifecycle === "recording";
+    if (recording && snapshot.scope === "mock") {
+      const resume = snapshot.recordingPaused;
+      const receipt = await issue({ type: resume ? "resume_recording" : "pause_recording" });
+      if (receipt.accepted) setDisplayPaused(!resume);
+      return;
+    }
+    if (snapshot.previewState === "live") setDisplayPaused((paused) => !paused);
+  }, [issue, snapshot]);
+
+  const handleStop = useCallback(() => {
+    if (!snapshot) return;
+    if (snapshot.lifecycle === "recording") {
+      void issue({ type: "stop_recording", reason: "operator" });
+      return;
+    }
+    if (snapshot.previewState === "live") {
+      void issue({ type: "stop_preview", reason: "operator" });
+    }
+  }, [issue, snapshot]);
 
   const handleRequestRename = useCallback((kind: DeviceKind, identity: DeviceIdentitySnapshot) => {
     setRenameError(null);
@@ -464,7 +487,6 @@ function App() {
         event.preventDefault();
         handleStartPreview();
       } else if (key === "n" && snapshot.controlConnection === "connected"
-        && snapshot.previewState === "live"
         && ["connected_idle", "finalized"].includes(snapshot.lifecycle)) {
         event.preventDefault();
         handleOpenSingleRecordingSetup();
@@ -498,8 +520,13 @@ function App() {
   const phase = snapshot.recordingPaused
     ? {
         label: "RECORDING PAUSED",
-        detail: "The mock recording Run remains open. Resume continues the same Run; End Recording closes and saves it.",
+        detail: "The mock recording Run and live display are paused. Resume continues the same Run; Stop closes and saves it.",
       }
+    : displayPaused && snapshot.previewState === "live" && snapshot.lifecycle !== "recording"
+      ? {
+          label: "PREVIEW PAUSED",
+          detail: "The live display is frozen. Resume continues Preview; Stop ends Preview.",
+        }
     : ["finalized", "recovery_required"].includes(snapshot.lifecycle)
       ? { label: runOutput.phaseLabel, detail: runOutput.detail }
       : PHASE_COPY[snapshot.lifecycle];
@@ -543,13 +570,13 @@ function App() {
     },
     {
       id: "preview-session",
-      label: "Preview source",
-      status: snapshot.previewState === "live" ? "pass" : "blocked",
+      label: "Preview source (optional)",
+      status: "pass",
       detail: snapshot.previewState === "live"
         ? capabilities.scope === "software"
-          ? "A bounded mock Preview is live. It is separate from the deterministic software recording stream and does not prove physical input."
-          : "A bounded mock Preview is live. It validates the control flow and does not write a file."
-        : "Start Preview and confirm the stream before creating a recording.",
+          ? "Preview is live. Recording may start from Preview, but Preview is not a recording prerequisite."
+          : "Preview is live. Recording may start from Preview or directly from the selected Pod."
+        : "Preview is stopped. Recording can still start directly from the selected Pod.",
       evidence: `previewState=${snapshot.previewState} · snapshot #${snapshot.snapshotSequence.toString()}`,
     },
     {
@@ -628,8 +655,16 @@ function App() {
     (fault) => fault.latched && !fault.recoverable,
   );
   const busy = busyAction !== null;
-  const canStopRecording = connected && snapshot.lifecycle === "recording";
-  const canPauseRecording = canStopRecording && snapshot.scope === "mock";
+  const recordingActive = snapshot.lifecycle === "recording";
+  const pauseAffectsRecording = recordingActive && snapshot.scope === "mock";
+  const canPause = connected
+    && (snapshot.previewState === "live" || pauseAffectsRecording);
+  const stopMode = recordingActive
+    ? "recording" as const
+    : snapshot.previewState === "live"
+      ? "preview" as const
+      : null;
+  const canStop = connected && stopMode !== null;
   const signalViewOptions: SignalViewOption[] = [
     {
       id: "wideband",
@@ -971,24 +1006,28 @@ function App() {
             runId={snapshot.runId}
             previewState={snapshot.previewState}
             recordingTarget={setupTarget}
-            recording={snapshot.lifecycle === "recording"}
-            recordingPaused={snapshot.recordingPaused}
+            recording={recordingActive}
             runOutput={runOutput}
             recoveryRequired={snapshot.lifecycle === "recovery_required"}
             canStartPreview={connected && ["stopped", "fault"].includes(snapshot.previewState) && selectedPod !== null}
-            canStopPreview={connected && snapshot.previewState === "live"}
             canSetupSingleRecording={connected && selectedPod?.selectable === true && (setupTarget !== null
-              || (snapshot.previewState === "live" && ["connected_idle", "finalized"].includes(snapshot.lifecycle)))}
+              || ["connected_idle", "finalized"].includes(snapshot.lifecycle))}
             canSetupMultiRecording={connected && (setupTarget !== null
-              || (snapshot.previewState === "live" && ["connected_idle", "finalized"].includes(snapshot.lifecycle)))}
+              || ["connected_idle", "finalized"].includes(snapshot.lifecycle))}
             recordingSetupMode={recordingSetupMode}
             recordingDeviceCount={runPlanLocked && snapshot.selectedPodKeys.length > 0
               ? snapshot.selectedPodKeys.length
               : selectedRecordPods.length}
             previewDeviceName={selectedPod?.identity.displayName ?? selectedPod?.label ?? "No device selected"}
-            canStart={connected && finalOutputReady && snapshot.lifecycle === "armed"}
-            canPauseRecording={canPauseRecording}
-            canStopRecording={canStopRecording}
+            canStart={connected
+              && finalOutputReady
+              && selectedPod?.selectable === true
+              && ["connected_idle", "finalized", "armed"].includes(snapshot.lifecycle)}
+            paused={snapshot.recordingPaused || displayPaused}
+            canPause={canPause}
+            canStop={canStop}
+            stopMode={stopMode}
+            pauseAffectsRecording={pauseAffectsRecording}
             canRecover={snapshot.scope === "mock"
               && connected
               && snapshot.lifecycle === "recovery_required"
@@ -998,14 +1037,11 @@ function App() {
               && snapshot.lifecycle === "recovery_required"
               && (nonRecoverableFaultActive || (snapshot.scope === "software" && !snapshot.stale))}
             onStartPreview={handleStartPreview}
-            onStopPreview={() => void issue({ type: "stop_preview", reason: "operator" })}
             onSetupSingleRecording={handleOpenSingleRecordingSetup}
             onSetupMultiRecording={handleOpenMultiRecordingSetup}
-            onStart={() => void issue({ type: "start_recording" })}
-            onToggleRecordingPause={() => void issue({
-              type: snapshot.recordingPaused ? "resume_recording" : "pause_recording",
-            })}
-            onStopRecording={() => void issue({ type: "stop_recording", reason: "operator" })}
+            onStart={handleStartRecording}
+            onTogglePause={() => void handleTogglePause()}
+            onStop={handleStop}
             onRecover={() => void issue({ type: "recover_run" })}
             onAcknowledgeFailed={() => void issue({ type: "acknowledge_failed_run" })}
             runStatus={(

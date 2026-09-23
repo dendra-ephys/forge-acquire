@@ -395,8 +395,8 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
   }
 
   private validatePlan(snapshot: DaemonSnapshot, plan: RunPlan): string | null {
-    if (!["connected_idle", "finalized"].includes(snapshot.lifecycle) || snapshot.previewState !== "live") {
-      return "Connect and start Preview first; no active Run may exist.";
+    if (!["connected_idle", "finalized"].includes(snapshot.lifecycle)) {
+      return "Connect first; no active Run may exist.";
     }
     if (!plan.label.trim() || !plan.recordingTarget.requestedDirectory.trim()
       || !plan.recordingTarget.baseName.trim() || plan.recordingTarget.overwritePolicy !== "forbid"

@@ -27,28 +27,28 @@ function renderPanel(overrides: Partial<RunControlPanelProps> = {}): string {
     previewState: "live",
     recordingTarget: null,
     recording: false,
-    recordingPaused: false,
     runOutput: output("idle"),
     recoveryRequired: false,
     canStartPreview: false,
-    canStopPreview: true,
     canSetupSingleRecording: true,
     canSetupMultiRecording: true,
     recordingSetupMode: "single",
     recordingDeviceCount: 1,
     previewDeviceName: "Direct Pod 1",
-    canStart: false,
-    canPauseRecording: false,
-    canStopRecording: false,
+    canStart: true,
+    paused: false,
+    canPause: true,
+    canStop: true,
+    stopMode: "preview",
+    pauseAffectsRecording: false,
     canRecover: false,
     canAcknowledgeFailed: false,
     onStartPreview: noop,
-    onStopPreview: noop,
     onSetupSingleRecording: noop,
     onSetupMultiRecording: noop,
     onStart: noop,
-    onToggleRecordingPause: noop,
-    onStopRecording: noop,
+    onTogglePause: noop,
+    onStop: noop,
     onRecover: noop,
     onAcknowledgeFailed: noop,
     runStatus: <div>Device recording status</div>,
@@ -67,14 +67,33 @@ describe("RunControlPanel", () => {
     expect(markup).toContain("<span>Setup</span>");
     expect(markup).toContain("<span>Multi-Pod</span>");
     expect(markup).toContain('aria-label="Start recording · 1 device"');
-    expect(markup).toContain("Stop Preview</span>");
+    expect(markup).toContain("Start Preview</span>");
+    expect(markup).toContain('aria-label="Start Preview"');
+    expect(markup).toContain("Preview is already running");
     expect(markup).toContain("Start Recording</button>");
-    expect(markup).toContain('aria-label="Pause recording"');
+    expect(markup).toContain('aria-label="Pause"');
+    expect(markup).toContain('aria-label="Stop preview"');
     expect(markup.match(/instrument-button--record"/g)).toHaveLength(1);
     expect(markup).not.toContain("Recording lifecycle");
     expect(markup).not.toContain(">Connect<");
     expect(markup).not.toContain(">Disconnect<");
     expect(markup).not.toContain("Sync");
+  });
+
+  it("keeps Start Recording available when Preview has not started", () => {
+    const markup = renderPanel({
+      previewState: "stopped",
+      canStartPreview: true,
+      canStart: true,
+      canPause: false,
+      canStop: false,
+      stopMode: null,
+    });
+
+    expect(markup).toContain('aria-label="Start Preview"');
+    expect(markup).toContain('aria-label="Start recording · 1 device"');
+    expect(markup).not.toContain('aria-label="Start recording · 1 device" disabled');
+    expect(markup).toContain('disabled="" aria-label="Stop preview"');
   });
 
   it("exposes separate pause and end recording actions", () => {
@@ -83,16 +102,18 @@ describe("RunControlPanel", () => {
       phaseLabel: "RECORDING",
       runId: "ACTIVE-RUN",
       recording: true,
-      canPauseRecording: true,
-      canStopRecording: true,
+      canPause: true,
+      canStop: true,
+      stopMode: "recording",
+      pauseAffectsRecording: true,
     });
 
-    expect(markup).toContain('aria-label="Pause recording"');
+    expect(markup).toContain('aria-label="Pause"');
     expect(markup).toContain(">Pause</button>");
-    expect(markup).toContain('aria-label="End recording"');
-    expect(markup).toContain("End Recording</button>");
+    expect(markup).toContain('aria-label="Stop recording"');
+    expect(markup).toContain(">Stop</button>");
     expect(markup.match(/instrument-button--stop"/g)).toHaveLength(1);
-    expect(markup).toContain("End input, drain, generate, validate, and publish the final NWB");
+    expect(markup).toContain("End recording, drain pending data, and save the Run");
     expect(markup).not.toContain(">Finalize</button>");
     expect(markup).not.toContain("Finalize Run");
   });
@@ -102,14 +123,16 @@ describe("RunControlPanel", () => {
       phase: "recording",
       phaseLabel: "RECORDING PAUSED",
       recording: true,
-      recordingPaused: true,
-      canPauseRecording: true,
-      canStopRecording: true,
+      paused: true,
+      canPause: true,
+      canStop: true,
+      stopMode: "recording",
+      pauseAffectsRecording: true,
     });
 
-    expect(markup).toContain('aria-label="Resume recording"');
+    expect(markup).toContain('aria-label="Resume"');
     expect(markup).toContain(">Resume</button>");
-    expect(markup).toContain('aria-label="End recording"');
+    expect(markup).toContain('aria-label="Stop recording"');
   });
 
   it("keeps the compound operation pending until the final NWB receipt is proven", () => {
@@ -174,7 +197,6 @@ describe("RunControlPanel", () => {
       phaseDetail: "Unsealed; generated 10 / committed 9 / durable 8",
       runId: "FAILED-RUN",
       recoveryRequired: true,
-      canStopPreview: true,
       canAcknowledgeFailed: true,
     });
 

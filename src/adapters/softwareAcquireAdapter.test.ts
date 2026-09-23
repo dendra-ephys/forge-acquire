@@ -124,6 +124,41 @@ describe("SoftwareAcquireAdapter", () => {
     await vi.advanceTimersByTimeAsync(TRANSITION_MS * steps);
   }
 
+  it("preflights a software recording without requiring Preview", async () => {
+    expect((await adapter.execute({ type: "connect" })).accepted).toBe(true);
+    await settle(1);
+    const connected = await adapter.readSnapshot();
+    const pod = connected.topology.directPods[0];
+
+    const receipt = await adapter.execute({
+      type: "preflight",
+      plan: {
+        label: "FORGE-DIRECT-RECORD",
+        plannedDurationSeconds: 60,
+        selectedDevices: [{
+          podKey: pod.key,
+          deviceId: pod.identity.deviceId,
+          identityEvidenceHash: pod.identity.identityEvidenceHash!,
+          inputEvidenceHash: pod.neuralInput!.evidenceHash!,
+        }],
+        topologyEvidenceHash: connected.topology.evidenceHash,
+        recordingTarget: {
+          requestedDirectory: "F:\\ForgeRuns",
+          baseName: "FORGE-DIRECT-RECORD",
+          allocationPolicy: "create_new_incrementing_suffix",
+          overwritePolicy: "forbid",
+        },
+      },
+    });
+
+    expect(receipt).toMatchObject({ accepted: true, scope: "software" });
+    await settle(2);
+    expect(await adapter.readSnapshot()).toMatchObject({
+      lifecycle: "preflight_passed",
+      previewState: "stopped",
+    });
+  });
+
   it("keeps Preview mock-bounded but binds Recording to a real create-new software journal", async () => {
     expect((await adapter.execute({ type: "connect" })).accepted).toBe(true);
     await settle(1);

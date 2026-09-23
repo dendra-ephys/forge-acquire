@@ -27,28 +27,28 @@ export interface RunControlPanelProps {
   previewState: PreviewSessionState;
   recordingTarget: RecordingTargetReservation | null;
   recording: boolean;
-  recordingPaused: boolean;
   runOutput: RunOutputSummary;
   recoveryRequired: boolean;
   canStartPreview: boolean;
-  canStopPreview: boolean;
   canSetupSingleRecording: boolean;
   canSetupMultiRecording: boolean;
   recordingSetupMode: RecordingSetupMode;
   recordingDeviceCount: number;
   previewDeviceName: string;
   canStart: boolean;
-  canPauseRecording: boolean;
-  canStopRecording: boolean;
+  paused: boolean;
+  canPause: boolean;
+  canStop: boolean;
+  stopMode: "preview" | "recording" | null;
+  pauseAffectsRecording: boolean;
   canRecover: boolean;
   canAcknowledgeFailed: boolean;
   onStartPreview: () => void;
-  onStopPreview: () => void;
   onSetupSingleRecording: () => void;
   onSetupMultiRecording: () => void;
   onStart: () => void;
-  onToggleRecordingPause: () => void;
-  onStopRecording: () => void;
+  onTogglePause: () => void;
+  onStop: () => void;
   onRecover: () => void;
   onAcknowledgeFailed: () => void;
   runStatus: ReactNode;
@@ -70,28 +70,28 @@ export function RunControlPanel({
   previewState,
   recordingTarget,
   recording,
-  recordingPaused,
   runOutput,
   recoveryRequired,
   canStartPreview,
-  canStopPreview,
   canSetupSingleRecording,
   canSetupMultiRecording,
   recordingSetupMode,
   recordingDeviceCount,
   previewDeviceName,
   canStart,
-  canPauseRecording,
-  canStopRecording,
+  paused,
+  canPause,
+  canStop,
+  stopMode,
+  pauseAffectsRecording,
   canRecover,
   canAcknowledgeFailed,
   onStartPreview,
-  onStopPreview,
   onSetupSingleRecording,
   onSetupMultiRecording,
   onStart,
-  onToggleRecordingPause,
-  onStopRecording,
+  onTogglePause,
+  onStop,
   onRecover,
   onAcknowledgeFailed,
   runStatus,
@@ -162,13 +162,13 @@ export function RunControlPanel({
         <button
           className="instrument-button instrument-button--preview"
           type="button"
-          aria-label={previewState === "live" ? "Stop Preview" : "Start Preview"}
-          data-tooltip={previewState === "live" ? "Stop Preview" : "Start Preview"}
-          disabled={busy || (previewState === "live" ? !canStopPreview : !canStartPreview)}
-          onClick={previewState === "live" ? onStopPreview : onStartPreview}
+          aria-label="Start Preview"
+          data-tooltip={previewState === "live" ? "Preview is already running" : "Start Preview"}
+          disabled={busy || !canStartPreview}
+          onClick={onStartPreview}
         >
           {previewState === "live" ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
-          <span>{previewState === "live" ? "Stop Preview" : "Start Preview"}</span>
+          <span>Start Preview</span>
         </button>
 
         <button
@@ -185,31 +185,37 @@ export function RunControlPanel({
         </button>
 
         <button
-          className={`instrument-button instrument-button--pause${recordingPaused ? " is-active" : ""}`}
+          className={`instrument-button instrument-button--pause${paused ? " is-active" : ""}`}
           type="button"
-          aria-label={recordingPaused ? "Resume recording" : "Pause recording"}
-          disabled={!canPauseRecording || busy}
-          title={recordingPaused
-            ? "Resume appending samples to the current recording."
-            : "Pause source writes without ending or saving the current recording."}
-          onClick={onToggleRecordingPause}
+          aria-label={paused ? "Resume" : "Pause"}
+          disabled={!canPause || busy}
+          title={paused
+            ? pauseAffectsRecording
+              ? "Resume recording and the live display."
+              : "Resume the live display."
+            : pauseAffectsRecording
+              ? "Pause recording and freeze the live display without ending the Run."
+              : "Freeze the live display without stopping Preview."}
+          onClick={onTogglePause}
         >
-          {recordingPaused
+          {paused
             ? <Play size={18} fill="currentColor" aria-hidden="true" />
             : <Pause size={18} aria-hidden="true" />}
-          {recordingPaused ? "Resume" : "Pause"}
+          {paused ? "Resume" : "Pause"}
         </button>
 
         <button
           className="instrument-button instrument-button--stop"
           type="button"
-          disabled={!canStopRecording || busy}
-          aria-label="End recording"
-          title="End input, drain, generate, validate, and publish the final NWB."
-          onClick={onStopRecording}
+          disabled={!canStop || busy}
+          aria-label={stopMode === "recording" ? "Stop recording" : "Stop preview"}
+          title={stopMode === "recording"
+            ? "End recording, drain pending data, and save the Run."
+            : "Stop Preview."}
+          onClick={onStop}
         >
           <CircleStop size={18} aria-hidden="true" />
-          End Recording
+          Stop
         </button>
 
         {recoveryRequired && canAcknowledgeFailed ? (

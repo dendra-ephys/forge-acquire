@@ -190,12 +190,13 @@ async function requireCompactRaisedRunButtons() {
   const start = page.locator("button.instrument-button--record");
   const pause = page.locator("button.instrument-button--pause");
   const stop = page.locator("button.instrument-button--stop");
-  const [panelColor, previewColor, startColor, pauseColor, stopColor, previewBox, startBox, pauseBox, stopBox] = await Promise.all([
+  const [panelColor, previewColor, startColor, pauseColor, stopColor, previewDisabled, previewBox, startBox, pauseBox, stopBox] = await Promise.all([
     panel.evaluate((element) => getComputedStyle(element).backgroundColor),
     preview.evaluate((element) => getComputedStyle(element).backgroundColor),
     start.evaluate((element) => getComputedStyle(element).backgroundColor),
     pause.evaluate((element) => getComputedStyle(element).backgroundColor),
     stop.evaluate((element) => getComputedStyle(element).backgroundColor),
+    preview.isDisabled(),
     preview.boundingBox(),
     start.boundingBox(),
     pause.boundingBox(),
@@ -212,7 +213,8 @@ async function requireCompactRaisedRunButtons() {
       `Run controls lost the requested two-row hierarchy: Preview ${previewBox?.width ?? 0}x${previewBox?.height ?? 0}px, Start ${startBox?.width ?? 0}x${startBox?.height ?? 0}px, Pause ${pauseBox?.width ?? 0}x${pauseBox?.height ?? 0}px, End ${stopBox?.width ?? 0}x${stopBox?.height ?? 0}px`,
     );
   }
-  if (previewColor === panelColor || startColor === panelColor || pauseColor === panelColor || stopColor === panelColor) {
+  if ((!previewDisabled && previewColor === panelColor)
+      || startColor === panelColor || pauseColor === panelColor || stopColor === panelColor) {
     throw new Error("Run buttons do not use a raised surface distinct from the acquisition panel");
   }
 }
@@ -297,7 +299,6 @@ try {
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Devices" }).waitFor();
   await page.getByText("Direct to PC", { exact: true }).waitFor();
-  await page.getByRole("application", { name: /Live wideband bank traces/ }).waitFor();
   const acquisitionToggle = page.getByRole("button", { name: "Expand acquisition controls", exact: true });
   await acquisitionToggle.waitFor();
   if ((await page.locator(".bench-workspace").getAttribute("data-controls-collapsed")) !== "true"
@@ -317,6 +318,13 @@ try {
   await page.setViewportSize({ width: 1440, height: 920 });
   await acquisitionToggle.click();
   await page.getByRole("heading", { name: "Acquisition", exact: true }).waitFor();
+  const startPreview = page.getByRole("button", { name: "Start Preview", exact: true });
+  await startPreview.waitFor();
+  await startPreview.click();
+  await page.getByRole("application", { name: /Live wideband bank traces/ }).waitFor();
+  if (await startPreview.isEnabled() || (await startPreview.textContent())?.trim() !== "Start Preview") {
+    throw new Error("Start Preview must keep its label and become disabled after Preview starts");
+  }
   await requireSharedWorkspaceToolbar();
   if ((await page.locator(".bench-header, .run-spine, .run-spine__steps").count()) !== 0) {
     throw new Error("Removed global header or recording lifecycle marquee remains visible");
@@ -559,11 +567,12 @@ try {
   await aggregatedPod.click();
   await page.getByRole("heading", { name: "Mock Aggregated Pod 1" }).waitFor();
   await waitForPhase("READY");
-  await page.getByRole("button", { name: "Stop Preview", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Start Preview", exact: true }).click();
+  await page.getByRole("button", { name: "Stop preview", exact: true }).waitFor();
   await assertNoAcquisitionStimulationControls("auto-connected");
   await screenshot("01-device-list-auto-connected.png");
 
-  const stopPreview = page.getByRole("button", { name: "Stop Preview", exact: true });
+  const stopPreview = page.getByRole("button", { name: "Stop preview", exact: true });
   await requireMinimumTarget(stopPreview, "Stop Preview");
   await assertNoAcquisitionStimulationControls("preview");
   const widebandCanvas = page.getByRole("application", { name: /Live wideband bank traces/ });
@@ -891,14 +900,14 @@ try {
   await recordButton.click();
   await waitForPhase("RECORDING");
   await assertNoAcquisitionStimulationControls("recording");
-  await page.getByRole("button", { name: "Stop Preview", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Stop recording", exact: true }).waitFor();
   await screenshot("05-recording-with-live-preview.png");
 
-  const pauseRecording = page.getByRole("button", { name: "Pause recording", exact: true });
+  const pauseRecording = page.getByRole("button", { name: "Pause", exact: true });
   await requireMinimumTarget(pauseRecording, "Pause Recording", 32);
   await pauseRecording.click();
   await waitForPhase("RECORDING PAUSED");
-  const resumeRecording = page.getByRole("button", { name: "Resume recording", exact: true });
+  const resumeRecording = page.getByRole("button", { name: "Resume", exact: true });
   await resumeRecording.waitFor();
   await screenshot("05b-recording-paused.png");
   await resumeRecording.click();
@@ -987,9 +996,9 @@ try {
   await page.getByRole("button", { name: "Exit signal focus" }).click();
   await page.setViewportSize({ width: 1440, height: 920 });
   const sequenceBeforeEndAndSave = await spikeCanvas.getAttribute("data-frame-sequence");
-  await page.getByRole("button", { name: "End recording", exact: true }).click();
+  await page.getByRole("button", { name: "Stop recording", exact: true }).click();
   await waitForPhase("SIMULATION COMPLETE");
-  await page.getByRole("button", { name: "Stop Preview", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Stop preview", exact: true }).waitFor();
   await page.waitForFunction(
     (sequence) => document.querySelector('[data-testid="spike-raster-waveform"]')
       ?.getAttribute("data-frame-sequence") !== sequence,

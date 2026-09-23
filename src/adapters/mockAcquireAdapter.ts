@@ -1042,9 +1042,6 @@ export class MockAcquireAdapter implements AcquireAdapter {
         if (this.lifecycle !== "connected_idle" && this.lifecycle !== "finalized") {
           return { code: "INVALID_STATE", message: "A new Preflight can start only from Connected Idle or Finalized" };
         }
-        if (this.previewState !== "live") {
-          return { code: "PREVIEW_REQUIRED", message: "Start Preview and confirm the stream first" };
-        }
         const devices = intent.plan.selectedDevices;
         const keys = devices.map((device) => device.podKey);
         const uniqueKeys = new Set(keys);

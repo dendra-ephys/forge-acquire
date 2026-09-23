@@ -131,6 +131,19 @@ describe("MockAcquireAdapter", () => {
     });
   });
 
+  it("admits recording setup without requiring Preview to be running", async () => {
+    await accept({ type: "connect" }, 1);
+
+    const receipt = await adapter.execute({ type: "preflight", plan: await runPlan() });
+    expect(receipt).toMatchObject({ accepted: true, requestedState: "preflighting" });
+    await vi.advanceTimersByTimeAsync(TRANSITION_MS * 2);
+
+    expect(await adapter.readSnapshot()).toMatchObject({
+      lifecycle: "preflight_passed",
+      previewState: "stopped",
+    });
+  });
+
   it("keeps command acceptance separate from the complete lifecycle snapshot sequence", async () => {
     const states: Array<{ lifecycle: AcquireLifecycleState; previewState: PreviewSessionState }> = [];
     adapter.subscribeSnapshots(({ lifecycle, previewState }) => states.push({ lifecycle, previewState }));
