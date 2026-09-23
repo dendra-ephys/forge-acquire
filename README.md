@@ -313,3 +313,8 @@ removed by the checker.
 ## Interaction provenance
 
 The information hierarchy was independently designed after reviewing Open Ephys GUI, SpikeGLX, and Intan RHX. No source code, screenshots, icons, branding, or pixel layouts were copied. See `DESIGN_NOTES.md` for the specific interaction ideas and license boundary.
+
+## License
+
+Forge Acquire is licensed under the GNU General Public License version 3 only
+(`GPL-3.0-only`). See [LICENSE](LICENSE).
