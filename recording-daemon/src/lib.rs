@@ -74,6 +74,7 @@ pub mod scm_qualification;
 pub(crate) mod scm_stop_receipt;
 pub mod service_protocol;
 pub mod service_replay;
+pub mod software_replay_control;
 #[cfg(windows)]
 pub mod software_replay_service;
 pub mod source;
@@ -248,3 +249,10 @@ pub use service_protocol::{
     query_software_replay_snapshot,
 };
 pub use service_protocol::{DaemonResponseV1, ServiceDispatcher, ServiceErrorV1};
+#[cfg(windows)]
+pub use software_replay_control::call_software_replay_control;
+pub use software_replay_control::{
+    SoftwareReplayControlCommandV1, SoftwareReplayControlRequestV1,
+    SoftwareReplayControlResponseV1, SOFTWARE_REPLAY_CONTROL_RESPONSE_SCHEMA,
+    SOFTWARE_REPLAY_CONTROL_SCHEMA,
+};

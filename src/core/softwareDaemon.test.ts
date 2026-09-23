@@ -7,6 +7,7 @@ import {
   decodeSoftwareReplayReservation,
   launchSoftwareReplay,
   sendSoftwareReplayRunCommand,
+  setSoftwareReplayRecordingPaused,
 } from "./softwareDaemon";
 
 function reservationRaw(overrides: Record<string, unknown> = {}) {
@@ -131,5 +132,41 @@ describe("software daemon WebView boundary", () => {
       },
       10,
     )).rejects.toThrow("software daemon boundary");
+  });
+
+  it("binds software pause responses to the exact Run and requested state", async () => {
+    invoke.mockResolvedValue({
+      available: true,
+      accepted: true,
+      paused: true,
+      requestId: "12",
+      epoch: "7",
+      discardedRecordCount: "18",
+      reason: "recording storage paused",
+    });
+    await expect(setSoftwareReplayRecordingPaused(
+      "\\\\.\\pipe\\forge-acqd-software-replay-1111",
+      true,
+      {
+        epoch: 7,
+        runIdHex: "11".repeat(16),
+        targetDeviceIdHex: "44".repeat(16),
+        frozenConfigHashHex: "55".repeat(32),
+      },
+      12,
+    )).resolves.toMatchObject({
+      accepted: true,
+      paused: true,
+      discardedRecordCount: 18n,
+    });
+    expect(invoke).toHaveBeenCalledWith("software_replay_recording_control", {
+      pipeName: "\\\\.\\pipe\\forge-acqd-software-replay-1111",
+      input: {
+        paused: true,
+        requestId: 12,
+        epoch: 7,
+        runIdHex: "11".repeat(16),
+      },
+    });
   });
 });

@@ -9,6 +9,10 @@ use serde::Serialize;
 use crate::run::{RunCommand, RunCommandKind, RunReceipt, RunState};
 use crate::run_ledger::{DurableRunService, DurableRunStatus};
 use crate::service_replay::{ProtectedReplaySession, ReplayOwnerShutdownSignal};
+use crate::software_replay_control::{
+    SoftwareReplayControlCommandV1, SoftwareReplayControlRequestV1,
+    SoftwareReplayControlResponseV1, SOFTWARE_REPLAY_CONTROL_RESPONSE_SCHEMA,
+};
 #[cfg(windows)]
 use crate::{
     analysis_worker_service::AnalysisWorkerRegistrationService, ipc::AuthenticatedPipeClient,
@@ -693,6 +697,41 @@ impl ServiceDispatcher {
                 },
             ),
         }
+    }
+
+    /// Handles the authenticated operator-only storage pause channel. This is
+    /// intentionally not a hardware Run command and is unavailable on the SCM
+    /// production dispatcher.
+    pub fn handle_operator_software_control(&mut self, request: &[u8]) -> io::Result<Vec<u8>> {
+        let request = SoftwareReplayControlRequestV1::decode(request)?;
+        if self.scm_owned || !self.authenticated_pipe {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "software pause control requires the authenticated non-SCM operator service",
+            ));
+        }
+        let session = self.replay_session.as_mut().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::Unsupported,
+                "software pause control has no replay session",
+            )
+        })?;
+        let outcome = session.set_operator_paused(
+            &self.run_service,
+            request.epoch,
+            request.run_id,
+            matches!(request.command, SoftwareReplayControlCommandV1::Pause),
+        );
+        SoftwareReplayControlResponseV1 {
+            schema: SOFTWARE_REPLAY_CONTROL_RESPONSE_SCHEMA.to_owned(),
+            accepted: outcome.accepted,
+            paused: outcome.paused,
+            request_id: request.request_id,
+            epoch: request.epoch,
+            discarded_record_count: outcome.discarded_record_count,
+            reason: outcome.reason,
+        }
+        .encode()
     }
 
     pub fn status(&self) -> DurableRunStatus {

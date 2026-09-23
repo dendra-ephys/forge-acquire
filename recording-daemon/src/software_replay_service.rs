@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::ipc::{canonical_sid_string, current_process_user_sid, SecurePipeServer};
 use crate::run::{RunCommandKind, RunState};
 use crate::service_protocol::{DaemonResponseV1, ServiceDispatcher, ServiceErrorV1};
+use crate::software_replay_control::is_software_replay_control_request;
 
 pub const SOFTWARE_REPLAY_RESERVATION_SCHEMA: &str = "forge.software-replay-reservation.v1";
 pub const SOFTWARE_REPLAY_JOURNAL_FILENAME: &str = "run.forgewal";
@@ -127,7 +128,11 @@ impl PreparedSoftwareReplayService {
             .run_until_acknowledged_transaction_flag_authenticated(
                 &exit_after_fack,
                 |_, request| {
-                    let response = self.dispatcher.handle(request)?;
+                    let response = if is_software_replay_control_request(request) {
+                        self.dispatcher.handle_operator_software_control(request)?
+                    } else {
+                        self.dispatcher.handle(request)?
+                    };
                     if accepted_terminal_response(request, &response) {
                         exit_after_fack.store(true, Ordering::Release);
                     }

@@ -90,6 +90,8 @@ impl DeterministicReplayConfig {
 pub struct DeterministicReplaySource {
     config: DeterministicReplayConfig,
     next_record_sequence: u64,
+    next_sample_counter: u64,
+    discontinuity_before_next: bool,
 }
 
 impl DeterministicReplaySource {
@@ -97,6 +99,8 @@ impl DeterministicReplaySource {
         Ok(Self {
             config: config.validate()?,
             next_record_sequence: 0,
+            next_sample_counter: 0,
+            discontinuity_before_next: false,
         })
     }
 
@@ -105,9 +109,7 @@ impl DeterministicReplaySource {
             return Ok(None);
         }
         let sequence = self.next_record_sequence;
-        let sample_start = sequence
-            .checked_mul(self.config.samples_per_channel as u64)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "sample counter overflow"))?;
+        let sample_start = self.next_sample_counter;
         let sample_end = sample_start
             .checked_add(self.config.samples_per_channel as u64)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "sample counter overflow"))?;
@@ -140,7 +142,11 @@ impl DeterministicReplaySource {
         let end_ns = scale_time_ns(sample_end, self.config.sample_rate_hz)?;
         let envelope = CanonicalRecordEnvelopeV1 {
             record_kind: RecordKind::SampleBlock,
-            flags: 0,
+            flags: if self.discontinuity_before_next {
+                forge_protocol_v1::RECORD_FLAG_DISCONTINUITY_BEFORE
+            } else {
+                0
+            },
             run_id: self.config.run_id,
             pod_id: self.config.pod_id,
             headstage_id: self.config.headstage_id,
@@ -162,7 +168,21 @@ impl DeterministicReplaySource {
             )
         })?;
         self.next_record_sequence += 1;
+        self.next_sample_counter = sample_end;
+        self.discontinuity_before_next = false;
         Ok(Some(encoded))
+    }
+
+    /// Advances the live source clock by one block without producing a record.
+    /// The next emitted block keeps the stored record sequence contiguous while
+    /// carrying an explicit discontinuity over the intentionally omitted time.
+    pub fn skip_next_record(&mut self) -> io::Result<()> {
+        self.next_sample_counter = self
+            .next_sample_counter
+            .checked_add(self.config.samples_per_channel as u64)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "sample counter overflow"))?;
+        self.discontinuity_before_next = true;
+        Ok(())
     }
 
     /// Returns one synthetic ADC value at an absolute sample counter. The
@@ -382,6 +402,24 @@ mod tests {
 
         let mut second = DeterministicReplaySource::new(config()).unwrap();
         assert_eq!(a, second.next_encoded_record().unwrap().unwrap());
+    }
+
+    #[test]
+    fn skipped_live_blocks_are_omitted_with_an_explicit_resume_gap() {
+        let mut source = DeterministicReplaySource::new(config()).unwrap();
+        let first = decode_record(&source.next_encoded_record().unwrap().unwrap()).unwrap();
+        source.skip_next_record().unwrap();
+        source.skip_next_record().unwrap();
+        let resumed = decode_record(&source.next_encoded_record().unwrap().unwrap()).unwrap();
+
+        assert_eq!(first.envelope.record_sequence, 0);
+        assert_eq!(first.envelope.sample_end_exclusive, 30);
+        assert_eq!(resumed.envelope.record_sequence, 1);
+        assert_eq!(resumed.envelope.sample_start, 90);
+        assert_ne!(
+            resumed.envelope.flags & forge_protocol_v1::RECORD_FLAG_DISCONTINUITY_BEFORE,
+            0
+        );
     }
 
     #[test]

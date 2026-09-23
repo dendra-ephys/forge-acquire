@@ -14,8 +14,13 @@ use forge_acqd::service_protocol::{DaemonResponseV1, ServiceErrorV1};
 use forge_acqd::software_replay_service::{
     verify_software_replay_reservation, SoftwareReplayReservationV1,
 };
-use forge_acqd::{call_software_replay_run_command, query_software_replay_snapshot};
-use forge_protocol_v1::{encode_low_speed, RunCommandV1, SampleBlockV1};
+use forge_acqd::{
+    call_software_replay_control, call_software_replay_run_command, query_software_replay_snapshot,
+    SoftwareReplayControlCommandV1, SoftwareReplayControlRequestV1,
+};
+use forge_protocol_v1::{
+    encode_low_speed, RunCommandV1, SampleBlockV1, RECORD_FLAG_DISCONTINUITY_BEFORE,
+};
 
 struct ChildGuard(Child);
 
@@ -125,9 +130,43 @@ fn independent_process_records_and_seals_two_software_devices() {
     assert!(recording.generated_record_count.unwrap_or_default() > 0);
     assert!(child.0.try_wait().unwrap().is_none());
 
+    let paused = call_software_replay_control(
+        &pipe,
+        &SoftwareReplayControlRequestV1::new(SoftwareReplayControlCommandV1::Pause, 6, 1, run_id)
+            .unwrap(),
+        5_000,
+        5_000,
+    )
+    .unwrap();
+    assert!(paused.accepted, "{}", paused.reason);
+    assert!(paused.paused);
+    let paused_snapshot = query_software_replay_snapshot(&pipe, 7, 1, 5_000, 5_000).unwrap();
+    let committed_at_pause = paused_snapshot.committed_record_count.unwrap();
+    thread::sleep(Duration::from_millis(20));
+    let still_paused = query_software_replay_snapshot(&pipe, 8, 1, 5_000, 5_000).unwrap();
+    assert_eq!(
+        still_paused.committed_record_count,
+        Some(committed_at_pause)
+    );
+
+    let resumed = call_software_replay_control(
+        &pipe,
+        &SoftwareReplayControlRequestV1::new(SoftwareReplayControlCommandV1::Resume, 9, 1, run_id)
+            .unwrap(),
+        5_000,
+        5_000,
+    )
+    .unwrap();
+    assert!(resumed.accepted, "{}", resumed.reason);
+    assert!(!resumed.paused);
+    assert!(resumed.discarded_record_count > 0);
+    thread::sleep(Duration::from_millis(20));
+    let after_resume = query_software_replay_snapshot(&pipe, 10, 1, 5_000, 5_000).unwrap();
+    assert!(after_resume.committed_record_count.unwrap() > committed_at_pause);
+
     let stopped = call_software_replay_run_command(
         &pipe,
-        6,
+        11,
         1,
         &RunCommandV1 {
             command: 4,
@@ -155,6 +194,7 @@ fn independent_process_records_and_seals_two_software_devices() {
             .unwrap();
     assert!(!records.is_empty());
     let mut pod_ids = Vec::new();
+    let mut saw_pause_gap = false;
     for record in records {
         let block = SampleBlockV1::decode(&record.canonical.payload).unwrap();
         assert_eq!(block.channel_count, 32);
@@ -163,8 +203,10 @@ fn independent_process_records_and_seals_two_software_devices() {
         if !pod_ids.contains(&record.canonical.envelope.pod_id) {
             pod_ids.push(record.canonical.envelope.pod_id);
         }
+        saw_pause_gap |= record.canonical.envelope.flags & RECORD_FLAG_DISCONTINUITY_BEFORE != 0;
     }
     assert_eq!(pod_ids.len(), 2);
+    assert!(saw_pause_gap);
 }
 
 #[test]

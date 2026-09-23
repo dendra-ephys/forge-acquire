@@ -228,6 +228,27 @@ struct SoftwareReplayLaunchInput {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SoftwareReplayPauseInput {
+    paused: bool,
+    request_id: u64,
+    epoch: u64,
+    run_id_hex: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SoftwareReplayPauseView {
+    available: bool,
+    accepted: bool,
+    paused: bool,
+    request_id: String,
+    epoch: String,
+    discarded_record_count: String,
+    reason: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct BrowseRunRootInput {
     request_id: u32,
     directory: String,
@@ -1102,6 +1123,72 @@ fn software_replay_run_command(
     }
 }
 
+#[tauri::command]
+fn software_replay_recording_control(
+    pipe_name: String,
+    input: SoftwareReplayPauseInput,
+) -> SoftwareReplayPauseView {
+    #[cfg(windows)]
+    {
+        let unavailable = |reason: String| SoftwareReplayPauseView {
+            available: false,
+            accepted: false,
+            paused: false,
+            request_id: input.request_id.to_string(),
+            epoch: input.epoch.to_string(),
+            discarded_record_count: "0".to_owned(),
+            reason,
+        };
+        if let Err(reason) = validate_software_pipe_name(&pipe_name) {
+            return unavailable(reason);
+        }
+        let run_id = match decode_hex(&input.run_id_hex) {
+            Ok(run_id) => run_id,
+            Err(reason) => return unavailable(reason),
+        };
+        let request = match forge_acqd::SoftwareReplayControlRequestV1::new(
+            if input.paused {
+                forge_acqd::SoftwareReplayControlCommandV1::Pause
+            } else {
+                forge_acqd::SoftwareReplayControlCommandV1::Resume
+            },
+            input.request_id,
+            input.epoch,
+            run_id,
+        ) {
+            Ok(request) => request,
+            Err(error) => return unavailable(error.to_string()),
+        };
+        match forge_acqd::call_software_replay_control(&pipe_name, &request, 250, 12_000) {
+            Ok(response) => SoftwareReplayPauseView {
+                available: true,
+                accepted: response.accepted,
+                paused: response.paused,
+                request_id: response.request_id.to_string(),
+                epoch: response.epoch.to_string(),
+                discarded_record_count: response.discarded_record_count.to_string(),
+                reason: response.reason,
+            },
+            Err(error) => unavailable(format!(
+                "software replay pause control unavailable: {error}"
+            )),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = pipe_name;
+        SoftwareReplayPauseView {
+            available: false,
+            accepted: false,
+            paused: false,
+            request_id: input.request_id.to_string(),
+            epoch: input.epoch.to_string(),
+            discarded_record_count: "0".to_owned(),
+            reason: "software replay daemon requires Windows".to_owned(),
+        }
+    }
+}
+
 #[cfg(windows)]
 fn validate_software_pipe_name(value: &str) -> Result<(), String> {
     const PREFIX: &str = r"\\.\pipe\forge-acqd-software-replay-";
@@ -1150,7 +1237,8 @@ pub fn run() {
             hardware_run_command,
             software_replay_launch,
             software_replay_snapshot,
-            software_replay_run_command
+            software_replay_run_command,
+            software_replay_recording_control
         ])
         .run(tauri::generate_context!())
         .expect("error while running Forge Acquire");

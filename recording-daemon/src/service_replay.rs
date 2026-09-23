@@ -34,6 +34,7 @@ const DEFAULT_PAYLOAD_BYTES: usize = 92;
 const SAMPLE_BLOCK_PAYLOAD_HEADER_BYTES: usize = 32;
 const DEFAULT_DURABILITY_BATCH: u64 = 128;
 const STOP_DEADLINE: Duration = Duration::from_secs(10);
+const PAUSE_DRAIN_DEADLINE: Duration = Duration::from_secs(2);
 const BACKPRESSURE_POLL_INTERVAL: Duration = Duration::from_micros(50);
 const OPERATOR_CHANNEL_COUNT: u16 = 32;
 const OPERATOR_SAMPLES_PER_CHANNEL: u32 = 30;
@@ -54,6 +55,14 @@ pub struct ReplayProgressSnapshot {
     /// At least one analysis fault event failed to enter its bounded in-memory
     /// evidence queue. This says nothing about durable persistence.
     pub fault_evidence_lost: Option<bool>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReplayPauseOutcome {
+    pub accepted: bool,
+    pub paused: bool,
+    pub discarded_record_count: u64,
+    pub reason: String,
 }
 
 pub struct ProtectedReplaySession {
@@ -232,6 +241,7 @@ struct PreparedReplay {
 
 struct ReplayWorker {
     action: Arc<AtomicU8>,
+    paused: Arc<AtomicBool>,
     completion: mpsc::Receiver<WorkerCompletion>,
     join: Option<JoinHandle<()>>,
 }
@@ -254,6 +264,7 @@ struct ReplayProgress {
     analysis_dropped: AtomicU64,
     analysis_faulted: AtomicU64,
     fault_evidence_lost: AtomicU64,
+    discarded_while_paused: AtomicU64,
 }
 
 impl ProtectedReplaySession {
@@ -488,6 +499,70 @@ impl ProtectedReplaySession {
         }
     }
 
+    /// Pauses only storage publication. The source worker continues advancing
+    /// every live interval, so a real transport can keep being drained without
+    /// applying backpressure to the device. Resume writes the next available
+    /// interval with an explicit discontinuity marker.
+    pub(crate) fn set_operator_paused(
+        &mut self,
+        lifecycle: &DurableRunService,
+        epoch: u64,
+        run_id: [u8; 16],
+        paused: bool,
+    ) -> ReplayPauseOutcome {
+        let status = lifecycle.status();
+        if status.state != RunState::Recording
+            || status.active_epoch != Some(epoch)
+            || status.active_run_id_hex.as_deref() != Some(hex(&run_id).as_str())
+        {
+            return ReplayPauseOutcome {
+                accepted: false,
+                paused: self.worker.as_ref().is_some_and(ReplayWorker::is_paused),
+                discarded_record_count: self
+                    .progress
+                    .discarded_while_paused
+                    .load(Ordering::Acquire),
+                reason: "pause control does not match the active recording Run".to_owned(),
+            };
+        }
+        let Some(worker) = self.worker.as_mut() else {
+            return ReplayPauseOutcome {
+                accepted: false,
+                paused: false,
+                discarded_record_count: self
+                    .progress
+                    .discarded_while_paused
+                    .load(Ordering::Acquire),
+                reason: "recording worker is unavailable".to_owned(),
+            };
+        };
+        match worker.set_paused(paused, &self.progress) {
+            Ok(()) => ReplayPauseOutcome {
+                accepted: true,
+                paused,
+                discarded_record_count: self
+                    .progress
+                    .discarded_while_paused
+                    .load(Ordering::Acquire),
+                reason: if paused {
+                    "recording storage paused; source intervals continue to be consumed"
+                } else {
+                    "recording storage resumed after an intentional discontinuity"
+                }
+                .to_owned(),
+            },
+            Err(error) => ReplayPauseOutcome {
+                accepted: false,
+                paused: worker.is_paused(),
+                discarded_record_count: self
+                    .progress
+                    .discarded_while_paused
+                    .load(Ordering::Acquire),
+                reason: error.to_string(),
+            },
+        }
+    }
+
     pub fn shutdown(&mut self, lifecycle: &mut DurableRunService) -> io::Result<()> {
         let mut worker_error = None;
         if let Some(mut worker) = self.worker.take() {
@@ -679,6 +754,9 @@ impl ProtectedReplaySession {
         self.progress
             .fault_evidence_lost
             .store(0, Ordering::Release);
+        self.progress
+            .discarded_while_paused
+            .store(0, Ordering::Release);
     }
 }
 
@@ -696,7 +774,9 @@ impl ReplayWorker {
             ));
         }
         let action = Arc::new(AtomicU8::new(ACTION_RUNNING));
+        let paused = Arc::new(AtomicBool::new(false));
         let worker_action = Arc::clone(&action);
+        let worker_paused = Arc::clone(&paused);
         let (completion_tx, completion_rx) = mpsc::sync_channel(1);
         let join = thread::Builder::new()
             .name("forge-protected-replay".to_owned())
@@ -704,6 +784,7 @@ impl ReplayWorker {
                 let result = run_worker(
                     prepared,
                     worker_action,
+                    worker_paused,
                     owner_shutdown,
                     progress,
                     #[cfg(windows)]
@@ -714,9 +795,39 @@ impl ReplayWorker {
             })?;
         Ok(Self {
             action,
+            paused,
             completion: completion_rx,
             join: Some(join),
         })
+    }
+
+    fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Acquire)
+    }
+
+    fn set_paused(&mut self, paused: bool, progress: &ReplayProgress) -> io::Result<()> {
+        self.paused.store(paused, Ordering::Release);
+        if !paused {
+            return Ok(());
+        }
+        let deadline = std::time::Instant::now() + PAUSE_DRAIN_DEADLINE;
+        while progress.queue_used.load(Ordering::Acquire) != 0 {
+            if self.action.load(Ordering::Acquire) != ACTION_RUNNING {
+                return Err(io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    "recording stopped while pause was draining queued records",
+                ));
+            }
+            if std::time::Instant::now() >= deadline {
+                self.paused.store(false, Ordering::Release);
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "recording pause could not drain the write queue before its deadline",
+                ));
+            }
+            thread::park_timeout(BACKPRESSURE_POLL_INTERVAL);
+        }
+        Ok(())
     }
 
     fn finish(&mut self, action: u8, timeout: Duration) -> io::Result<WorkerCompletion> {
@@ -743,6 +854,7 @@ impl ReplayWorker {
 fn run_worker(
     prepared: PreparedReplay,
     action: Arc<AtomicU8>,
+    paused: Arc<AtomicBool>,
     owner_shutdown: Arc<AtomicBool>,
     progress: Arc<ReplayProgress>,
     #[cfg(windows)] mut analysis_branches: Vec<LiveAnalysisBranch>,
@@ -794,6 +906,7 @@ fn run_worker(
                 &pool,
                 &record_tx,
                 &producer_action,
+                &paused,
                 &producer_owner_shutdown,
                 &producer_consumer_failed,
                 &producer_progress,
@@ -908,6 +1021,7 @@ fn run_replay_producer(
     pool: &BoundedBufferPool,
     record_tx: &mpsc::SyncSender<PooledBuffer>,
     action: &AtomicU8,
+    paused: &AtomicBool,
     owner_shutdown: &AtomicBool,
     consumer_failed: &AtomicBool,
     progress: &ReplayProgress,
@@ -915,6 +1029,16 @@ fn run_replay_producer(
     while action.load(Ordering::Acquire) == ACTION_RUNNING
         && !owner_shutdown.load(Ordering::Acquire)
     {
+        if paused.load(Ordering::Acquire) {
+            for source in sources.iter_mut() {
+                source.skip_next_record()?;
+                progress
+                    .discarded_while_paused
+                    .fetch_add(1, Ordering::AcqRel);
+            }
+            thread::sleep(Duration::from_millis(1));
+            continue;
+        }
         // One complete round emits exactly one 1 ms SampleBlock for every
         // selected Pod. Stop and Abort are observed only between rounds. A
         // transiently full journal queue therefore applies bounded
@@ -1099,6 +1223,7 @@ mod tests {
             let pool = BoundedBufferPool::new(2, RECORD_HEADER_LEN + 32 + 60).unwrap();
             let (record_tx, record_rx) = mpsc::sync_channel::<PooledBuffer>(1);
             let action = Arc::new(AtomicU8::new(ACTION_RUNNING));
+            let paused = Arc::new(AtomicBool::new(false));
             let owner_shutdown = Arc::new(AtomicBool::new(false));
             let consumer_failed = Arc::new(AtomicBool::new(false));
             let progress = Arc::new(ReplayProgress::default());
@@ -1115,6 +1240,7 @@ mod tests {
                     &producer_pool,
                     &record_tx,
                     &producer_action,
+                    &paused,
                     &producer_owner_shutdown,
                     &producer_consumer_failed,
                     &producer_progress,
@@ -1225,6 +1351,67 @@ mod tests {
             assert_eq!(round[0].canonical.envelope.pod_id, pod_ids[0]);
             assert_eq!(round[1].canonical.envelope.pod_id, pod_ids[1]);
         }
+    }
+
+    #[test]
+    fn operator_pause_drains_then_discards_live_intervals_until_resume() {
+        let root = TempRoot::new();
+        let mut lifecycle = DurableRunService::open(root.0.join("run.ledger")).unwrap();
+        let mut replay = ProtectedReplaySession::new_operator_software(
+            &root.0,
+            [0x61; 16],
+            [0x62; 16],
+            [0x63; 32],
+            vec![[0x51; 16]],
+        )
+        .unwrap();
+        for (id, kind) in [
+            (1, RunCommandKind::Prepare),
+            (2, RunCommandKind::Arm),
+            (3, RunCommandKind::Start),
+        ] {
+            assert!(
+                replay
+                    .handle_command(&mut lifecycle, command(id, kind))
+                    .unwrap()
+                    .accepted
+            );
+        }
+        thread::sleep(Duration::from_millis(10));
+        let pause = replay.set_operator_paused(&lifecycle, 1, [0x61; 16], true);
+        assert!(pause.accepted);
+        assert!(pause.paused);
+        let committed_at_pause = replay.progress().committed_record_count.unwrap();
+        thread::sleep(Duration::from_millis(10));
+        assert_eq!(
+            replay.progress().committed_record_count,
+            Some(committed_at_pause)
+        );
+
+        let resume = replay.set_operator_paused(&lifecycle, 1, [0x61; 16], false);
+        assert!(resume.accepted);
+        assert!(!resume.paused);
+        assert!(resume.discarded_record_count > 0);
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while replay.progress().committed_record_count == Some(committed_at_pause) {
+            assert!(std::time::Instant::now() < deadline);
+            thread::yield_now();
+        }
+        assert!(
+            replay
+                .handle_command(&mut lifecycle, command(4, RunCommandKind::Stop))
+                .unwrap()
+                .accepted
+        );
+
+        let records = crate::journal::JournalReader::open_sealed(root.0.join("run.forgewal"))
+            .unwrap()
+            .collect::<io::Result<Vec<_>>>()
+            .unwrap();
+        assert!(records.iter().any(|record| {
+            record.canonical.envelope.flags & forge_protocol_v1::RECORD_FLAG_DISCONTINUITY_BEFORE
+                != 0
+        }));
     }
 
     #[cfg(windows)]

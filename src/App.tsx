@@ -436,7 +436,7 @@ function App() {
   const handleTogglePause = useCallback(async () => {
     if (!snapshot) return;
     const recording = snapshot.lifecycle === "recording";
-    if (recording && snapshot.scope === "mock") {
+    if (recording && (snapshot.scope === "mock" || snapshot.scope === "software")) {
       const resume = snapshot.recordingPaused;
       const receipt = await issue({ type: resume ? "resume_recording" : "pause_recording" });
       if (receipt.accepted) setDisplayPaused(!resume);
@@ -656,7 +656,8 @@ function App() {
   );
   const busy = busyAction !== null;
   const recordingActive = snapshot.lifecycle === "recording";
-  const pauseAffectsRecording = recordingActive && snapshot.scope === "mock";
+  const pauseAffectsRecording = recordingActive
+    && (snapshot.scope === "mock" || snapshot.scope === "software");
   const canPause = connected
     && (snapshot.previewState === "live" || pauseAffectsRecording);
   const stopMode = recordingActive

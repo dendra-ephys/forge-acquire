@@ -5,6 +5,7 @@ const software = vi.hoisted(() => ({
   launchSoftwareReplay: vi.fn(),
   readSoftwareReplaySnapshot: vi.fn(),
   sendSoftwareReplayRunCommand: vi.fn(),
+  setSoftwareReplayRecordingPaused: vi.fn(),
 }));
 vi.mock("../core/softwareDaemon", () => software);
 
@@ -60,6 +61,7 @@ describe("SoftwareAcquireAdapter", () => {
     software.launchSoftwareReplay.mockReset();
     software.readSoftwareReplaySnapshot.mockReset();
     software.sendSoftwareReplayRunCommand.mockReset();
+    software.setSoftwareReplayRecordingPaused.mockReset();
     vi.stubGlobal("crypto", {
       getRandomValues(values: Uint8Array) {
         values.fill(0x11);
@@ -104,6 +106,17 @@ describe("SoftwareAcquireAdapter", () => {
         available: true,
         reason: currentState,
         snapshot: daemon(currentState, requestId, epoch),
+      }),
+    );
+    software.setSoftwareReplayRecordingPaused.mockImplementation(
+      async (_pipe: string, paused: boolean, context: { epoch: number }, requestId: number) => ({
+        available: true,
+        accepted: true,
+        paused,
+        requestId: BigInt(requestId),
+        epoch: BigInt(context.epoch),
+        discardedRecordCount: paused ? 0n : 12n,
+        reason: paused ? "paused" : "resumed",
       }),
     );
     adapter = new SoftwareAcquireAdapter({
@@ -270,6 +283,66 @@ describe("SoftwareAcquireAdapter", () => {
     expect(software.sendSoftwareReplayRunCommand).toHaveBeenCalledWith(
       expect.any(String),
       4,
+      expect.any(Object),
+      expect.any(Number),
+    );
+  });
+
+  it("pauses software journal writes while keeping the Run open, then resumes", async () => {
+    await adapter.execute({ type: "connect" });
+    await settle(1);
+    const connected = await adapter.readSnapshot();
+    const pod = connected.topology.directPods[0];
+    const plan = {
+      label: "FORGE-PAUSE",
+      plannedDurationSeconds: 60,
+      selectedDevices: [{
+        podKey: pod.key,
+        deviceId: pod.identity.deviceId,
+        identityEvidenceHash: pod.identity.identityEvidenceHash!,
+        inputEvidenceHash: pod.neuralInput!.evidenceHash!,
+      }],
+      topologyEvidenceHash: connected.topology.evidenceHash,
+      recordingTarget: {
+        requestedDirectory: "F:\\ForgeRuns",
+        baseName: "FORGE-PAUSE",
+        allocationPolicy: "create_new_incrementing_suffix" as const,
+        overwritePolicy: "forbid" as const,
+      },
+    };
+    expect((await adapter.execute({ type: "preflight", plan })).accepted).toBe(true);
+    await settle(2);
+    expect((await adapter.execute({ type: "arm_recording" })).accepted).toBe(true);
+    await settle(2);
+    expect((await adapter.execute({ type: "start_recording" })).accepted).toBe(true);
+    await settle(2);
+
+    const pause = await adapter.execute({ type: "pause_recording" });
+    expect(pause).toMatchObject({ accepted: true, intent: "pause_recording" });
+    expect(pause.message).toContain("reads continue, writes stop");
+    expect(await adapter.readSnapshot()).toMatchObject({
+      lifecycle: "recording",
+      recordingPaused: true,
+    });
+
+    const resume = await adapter.execute({ type: "resume_recording" });
+    expect(resume).toMatchObject({ accepted: true, intent: "resume_recording" });
+    expect(resume.message).toContain("12 intervals skipped; gap marked");
+    expect(await adapter.readSnapshot()).toMatchObject({
+      lifecycle: "recording",
+      recordingPaused: false,
+    });
+    expect(software.setSoftwareReplayRecordingPaused).toHaveBeenNthCalledWith(
+      1,
+      expect.any(String),
+      true,
+      expect.any(Object),
+      expect.any(Number),
+    );
+    expect(software.setSoftwareReplayRecordingPaused).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      false,
       expect.any(Object),
       expect.any(Number),
     );

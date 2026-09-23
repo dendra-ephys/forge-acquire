@@ -25,6 +25,7 @@ import {
   launchSoftwareReplay,
   readSoftwareReplaySnapshot,
   sendSoftwareReplayRunCommand,
+  setSoftwareReplayRecordingPaused,
   type SoftwareReplayReservation,
 } from "../core/softwareDaemon";
 
@@ -210,6 +211,7 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
   private lastOuterReceiptId: string | null = null;
   private lastInnerReceiptId: string | null = null;
   private pipeFault: string | null = null;
+  private recordingPaused = false;
   private disposed = false;
 
   constructor(options: SoftwareAcquireAdapterOptions = {}) {
@@ -268,12 +270,9 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
         case "start_recording":
           return await this.realThenMock(intent, 3, "recording");
         case "pause_recording":
+          return await this.setRecordingPaused(intent, true);
         case "resume_recording":
-          return this.reject(
-            intent,
-            "RECORDING_PAUSE_UNAVAILABLE",
-            "This daemon protocol does not support reversible recording pause. End Recording remains fail-closed and available.",
-          );
+          return await this.setRecordingPaused(intent, false);
         case "stop_recording":
           return await this.stopAndSeal(intent);
         case "recover_run":
@@ -362,6 +361,7 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
       selectedDeviceIds: plan.selectedDevices.map((device) => device.deviceId),
       reservation: recordingReservation(launch),
     };
+    this.recordingPaused = false;
     this.pipeFault = null;
     const prepared = await this.command(1);
     if (!prepared.accepted || prepared.state !== "prepared") {
@@ -450,10 +450,42 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
     // consumption-acknowledged. Stop polling before the inner UI transition so
     // an expected clean process exit cannot be misclassified as pipe loss.
     this.stopPolling();
+    this.recordingPaused = false;
     const receipt = await this.mockReceipt(intent,
       "The daemon stopped input, drained queues, completed the durability barrier, and sealed run.forgewal. Preview continues.",
     );
     return receipt;
+  }
+
+  private async setRecordingPaused(
+    intent: Extract<AcquireIntent, { type: "pause_recording" | "resume_recording" }>,
+    paused: boolean,
+  ): Promise<CommandReceipt> {
+    const active = this.activeRun;
+    if (active === null) {
+      return this.reject(intent, "RUN_CONTEXT_MISSING", "No active software recording exists");
+    }
+    const result = await setSoftwareReplayRecordingPaused(
+      active.pipeName,
+      paused,
+      active.context,
+      this.nextRequestId(),
+    );
+    if (!result.accepted) {
+      return this.reject(intent, "DAEMON_REJECTED", result.reason);
+    }
+    // The inner adapter supplies preview fixtures only. Its delayed synthetic
+    // transition must not veto an already acknowledged daemon storage state.
+    const inner = await this.inner.execute(intent);
+    this.recordingPaused = paused;
+    this.publish();
+    return this.outerReceipt(
+      inner,
+      paused
+        ? "Recording paused; reads continue, writes stop."
+        : `Recording resumed; ${result.discardedRecordCount} intervals skipped; gap marked.`,
+      true,
+    );
   }
 
   private async mockReceipt(intent: AcquireIntent, message?: string): Promise<CommandReceipt> {
@@ -670,6 +702,7 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
       scope: "software",
       synthetic: true,
       lifecycle: failed ? "recovery_required" : inner.lifecycle,
+      recordingPaused: this.recordingPaused,
       controlConnection: pipeFailureActive ? "lost" : inner.controlConnection,
       stale: inner.stale || pipeFailureActive,
       runId: active?.context.runIdHex ?? inner.runId,

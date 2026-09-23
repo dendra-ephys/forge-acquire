@@ -34,6 +34,16 @@ export interface SoftwareReplayReservation {
   evidenceHash: string;
 }
 
+export interface SoftwareReplayPauseResult {
+  available: boolean;
+  accepted: boolean;
+  paused: boolean;
+  requestId: bigint;
+  epoch: bigint;
+  discardedRecordCount: bigint;
+  reason: string;
+}
+
 type JsonRecord = Record<string, unknown>;
 
 const RESERVATION_KEYS = [
@@ -53,6 +63,16 @@ const RESERVATION_KEYS = [
   "synthetic",
   "processId",
   "evidenceHash",
+] as const;
+
+const PAUSE_RESULT_KEYS = [
+  "available",
+  "accepted",
+  "paused",
+  "requestId",
+  "epoch",
+  "discardedRecordCount",
+  "reason",
 ] as const;
 
 function fail(message: string): never {
@@ -84,6 +104,12 @@ function hexField(value: unknown, bytes: number, label: string): string {
   const text = stringField(value, label);
   if (!new RegExp(`^[0-9a-f]{${bytes * 2}}$`).test(text)) fail(`${label} must be lowercase hexadecimal`);
   return text;
+}
+
+function unsignedBigIntField(value: unknown, label: string): bigint {
+  const text = stringField(value, label);
+  if (!/^(0|[1-9][0-9]*)$/.test(text)) fail(`${label} must be an unsigned decimal integer`);
+  return BigInt(text);
 }
 
 export function decodeSoftwareReplayReservation(raw: unknown): SoftwareReplayReservation {
@@ -212,6 +238,50 @@ export async function sendSoftwareReplayRunCommand(
     || snapshot.hardware_transport_available || snapshot.request_id !== BigInt(requestId)
     || snapshot.epoch !== BigInt(context.epoch)) {
     fail("command response contradicted the current-user software daemon boundary");
+  }
+  return result;
+}
+
+export async function setSoftwareReplayRecordingPaused(
+  pipeName: string,
+  paused: boolean,
+  context: DaemonRunContext,
+  requestId: number,
+): Promise<SoftwareReplayPauseResult> {
+  if (!pipeName || !Number.isSafeInteger(requestId) || requestId <= 0
+    || !Number.isSafeInteger(context.epoch) || context.epoch <= 0) {
+    throw new Error("invalid pause request");
+  }
+  const raw = await invoke<unknown>("software_replay_recording_control", {
+    pipeName,
+    input: {
+      paused,
+      requestId,
+      epoch: context.epoch,
+      runIdHex: context.runIdHex,
+    },
+  });
+  if (!isRecord(raw)) fail("invalid result");
+  exactKeys(raw, PAUSE_RESULT_KEYS, "pause");
+  const { available, accepted, paused: returnedPaused } = raw;
+  if (typeof available !== "boolean" || typeof accepted !== "boolean" || typeof returnedPaused !== "boolean") {
+    fail("invalid flags");
+  }
+  const result: SoftwareReplayPauseResult = {
+    available,
+    accepted,
+    paused: returnedPaused,
+    requestId: unsignedBigIntField(raw.requestId, "requestId"),
+    epoch: unsignedBigIntField(raw.epoch, "epoch"),
+    discardedRecordCount: unsignedBigIntField(raw.discardedRecordCount, "discardedRecordCount"),
+    reason: stringField(raw.reason, "reason"),
+  };
+  if (!result.available || result.requestId !== BigInt(requestId)
+    || result.epoch !== BigInt(context.epoch)) {
+    throw new Error(result.reason || "pause unavailable");
+  }
+  if (result.accepted && result.paused !== paused) {
+    fail("state mismatch");
   }
   return result;
 }
