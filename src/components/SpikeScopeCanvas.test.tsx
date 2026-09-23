@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { SpikePreviewFrame, SpikeWaveformEvent } from "../adapters/acquireAdapter";
-import { waveformEventsForMode, waveformWindowInvariant } from "./SpikeScopeCanvas";
+import {
+  boundedActivityWindow,
+  overviewColumnCount,
+  virtualChannelWindow,
+  waveformClusterGroups,
+  waveformWindowInvariant,
+} from "./SpikeScopeCanvas";
 
 function waveformEvent(
   eventId: string,
@@ -76,6 +82,7 @@ function frameFixture(): SpikePreviewFrame {
       observedEventCount: channel === 3 ? 3 : 0,
       rateHz: channel === 3 ? 3 : 0,
       valid: true,
+      recentWaveforms: channel === 3 ? [[0, -20, -80, -30, 5]] : [],
     })),
     accounting: {
       selectionPolicy: "channel_stratified_rotating_v1",
@@ -113,6 +120,29 @@ function frameFixture(): SpikePreviewFrame {
 }
 
 describe("SpikeScopeCanvas waveform helpers", () => {
+  it("keeps the activity selector DOM bounded for thousand-channel inputs", () => {
+    expect(boundedActivityWindow(1_024, 0)).toEqual({ start: 0, size: 48, maximumStart: 976 });
+    expect(boundedActivityWindow(1_024, 50)).toEqual({ start: 488, size: 48, maximumStart: 976 });
+    expect(boundedActivityWindow(1_024, 100)).toEqual({ start: 976, size: 48, maximumStart: 976 });
+  });
+
+  it("virtualizes matrix rows instead of mounting every channel tile", () => {
+    expect(overviewColumnCount(1_040)).toBe(5);
+    expect(overviewColumnCount(620)).toBe(3);
+    expect(virtualChannelWindow(1_024, 0, 310, 5)).toEqual({
+      start: 0,
+      size: 40,
+      rowHeight: 86,
+      startRow: 0,
+      totalRows: 205,
+      columns: 5,
+    });
+    const scrolled = virtualChannelWindow(1_024, 15_376, 310, 5);
+    expect(scrolled.start).toBe(880);
+    expect(scrolled.start % scrolled.columns).toBe(0);
+    expect(scrolled.size).toBeLessThanOrEqual(48);
+  });
+
   it("accepts a complete selected-channel window with exact count and TTL coverage", () => {
     expect(waveformWindowInvariant(frameFixture())).toBe(true);
   });
@@ -141,15 +171,12 @@ describe("SpikeScopeCanvas waveform helpers", () => {
     expect(waveformWindowInvariant(expired)).toBe(false);
   });
 
-  it("returns every retained waveform for all, only the newest for latest, and none for statistics", () => {
+  it("keeps every retained waveform in one honest unsorted group until cluster labels exist", () => {
     const frame = frameFixture();
-
-    expect(waveformEventsForMode(frame, "all")).toEqual(
-      frame.selectedChannelWaveforms.events,
-    );
-    expect(waveformEventsForMode(frame, "latest")).toEqual([
-      frame.selectedChannelWaveforms.events[2],
-    ]);
-    expect(waveformEventsForMode(frame, "statistics")).toEqual([]);
+    expect(waveformClusterGroups(frame)).toEqual([{
+      id: "unsorted",
+      label: "UNSORTED POOL",
+      events: frame.selectedChannelWaveforms.events,
+    }]);
   });
 });

@@ -7,21 +7,43 @@ NWB-publication, or product-release evidence.
 ## Product intent
 
 Forge Acquire is a single-workspace acquisition instrument for a neuroscientist operating
-one to eight Receiver Pods for runs lasting up to 24 hours. The visual language is **Bench
-Instrument / 实验台精密仪器**:
+one to eight Receiver Pods for runs lasting up to 24 hours. The visual language is a restrained,
+ChatGPT-like desktop workspace:
 
 - state, evidence, and the next safe action take priority over decoration;
-- neutral instrument surfaces carry structure; blue identifies ordinary control, amber
-  means attention or qualification, and red is reserved for faults and destructive action;
-- controls keep visible verb labels and large hit areas suitable for gloves and time pressure;
+- two explicit light/dark themes share one neutral grayscale token hierarchy; status never adds
+  a decorative color palette;
+- operator-facing copy is English-only. Controls that are obvious from a standard icon remain
+  icon-only with at least a 36 px dense-desktop hit target, an accessible name, and a custom
+  hover/focus tooltip; consequential actions such as Connect, Start, and End and Save retain short
+  visible verbs and the larger critical-action target;
 - system figures use tabular numerals; status never depends on color alone;
-- no marketing metrics, card-grid dashboard, glassmorphism, broad gradients, decorative
-  animation, or network font dependency;
-- one signature interaction, a compact **Run result strip**, presents one receipt-backed
-  operator outcome without a row of internal evidence categories.
+- the workspace uses continuous surfaces and quiet separators instead of nested card borders;
+  detailed explanations appear on hover/focus or in explicit disclosures rather than as permanent
+  secondary copy;
+- no marketing metrics, card-grid dashboard, glassmorphism, broad gradients, decorative animation,
+  mixed-language labels, or network font dependency;
+- one signature **Run Spine** presents Preview -> Ready -> Recording -> Saving -> Result
+  without treating command acceptance as a state transition, while the compact bottom
+  **Run result strip** presents exactly one receipt-backed operator outcome.
 
 The UI is a control plane. It may summarize evidence, but it may not infer a capability,
 invent a successful transition, or promote an unavailable function.
+
+### Vertical rhythm and baseline contract
+
+Compactness never permits arbitrary vertical alignment. Every steady-state row uses one of two
+templates only:
+
+- one-line rows center the label, value, icon, and help control on one shared vertical axis;
+- lifecycle tracks reserve an upper row for dots/connectors and a lower row for labels, with one
+  shared dot baseline and one shared label baseline.
+
+The top Run Spine and right Recording lifecycle must never place connector rules through text.
+Labels within the same track may not drift, wrap independently, or alternate between top, middle,
+and bottom alignment. Two-line data readouts may use a top label and bottom value only when every
+peer in that strip uses the same template. Visual QA measures these baselines and fails on overlap,
+vertical drift, or a truncated current phase at 1080 x 720.
 
 ## Single-workspace information architecture
 
@@ -30,11 +52,12 @@ Settings and diagnostics are progressive disclosure, never replacements for the 
 
 | Region | Responsibility |
 |---|---|
-| Top command bar | Source identity, daemon freshness, current lifecycle phase, Run clock, and the next valid acquisition action |
-| Left device list | Independently collapsible devices grouped by Direct-to-PC or expandable Aggregator paths; display name, immutable ID, Preview selection, and REC membership remain distinct |
+| Top bar | Product identity, source identity, icon-only independent-daemon help, and the light/dark theme control |
+| Run Spine | Preview -> Ready -> Recording -> Saving -> Result sequence plus the latest bounded command receipt; snapshot state remains authoritative |
+| Left device list | Codex-style project/thread hierarchy: collapsible Direct-to-PC and Aggregator parent rows with flat, indented Pod children; the visible row stays compact while immutable ID and route remain in its accessible label and hover detail |
 | Central preview | Primary and largest working surface: stable Wideband/LFP/Spikes views using bounded eight-channel banks, clickable full-Pod Spike channel activity, and a complete rolling window of selected-channel event waveforms |
 | Diagnostics | Independently collapsible fault/recovery details; compact by default and never a replacement for visible fault state |
-| Right control column | Independently collapsible Connect, Preview, Recording setup/Arm/Record/End-and-Save controls and current Run target; no stimulation control or second Finalize action appears in this acquisition surface |
+| Right control column | Independently collapsible Connect, icon-only Preview and recording-scope setup, Arm/Record/End-and-Save controls, and current Run target; no stimulation control or second Finalize action appears in this acquisition surface |
 | Bottom Run result strip | Fixed compact operator layer with exactly one outcome: not started, recording, ending/saving, saved, simulation complete, NWB incomplete, or failed |
 
 `End and Save` is one operator action, but its click/command acknowledgement alone is never a
@@ -55,6 +78,32 @@ devices, save location, final output, and current readiness.
 Detailed hardware hashes, service fields, and long fault history belong in a collapsible
 Diagnostics drawer. Current Preview and Recording controls remain visible without scrolling
 through those details.
+
+### Theme and component-system boundary
+
+The React shell uses `@openai/apps-sdk-ui` 0.2.2 for its document-theme contract and selected
+accessible primitives. `data-theme="light|dark"` is the sole DOM theme selector. On first
+launch the shell follows the operating-system preference; an explicit operator choice is stored
+under `forge-acquire-theme` and restored before React mounts, so the Tauri WebView does not flash
+the opposite theme. Theme changes are local presentation state: they send no `AcquireIntent`,
+alter no snapshot, and create no receipt.
+
+Forge maps the shared component roles onto its own semantic instrument tokens in
+`src/forge-theme.css`; application components do not branch on light/dark literals. The full Apps
+SDK UI stylesheet is intentionally not imported because it includes KaTeX CDN font URLs and
+unneeded chat/Markdown styling. The checked-in build imports only the package foundation while
+component entrypoints contribute their own CSS. Production HTML/CSS remains fail-closed against
+remote runtime resources in `scripts/check-bundle-budget.mjs`.
+
+The neutral token map deliberately follows the ChatGPT desktop appearance model: System-derived
+first launch, explicit Light/Dark choices, black/white accents, soft selected surfaces, and no
+semantic rainbow. The application does not copy ChatGPT product layout or branding. Explanatory
+microcopy is implemented through `InfoHint` and `data-tooltip` hover/focus surfaces; it remains
+available to keyboard and assistive-technology users without occupying the steady-state layout.
+
+Chatbox and Cherry Studio inform only the restrained desktop composition, neutral-first token
+structure, and explicit light/dark interaction. No source, assets, branding, or pixel layout are
+copied from those GPL-3.0/AGPL-3.0 projects. Apps SDK UI itself is an MIT-licensed dependency.
 
 ### Data-first collapse contract
 
@@ -125,8 +174,16 @@ or Aggregator port numbers are never used to infer immutable identity. Mock rena
 revision, power-loss-safe commit, reconnect/power-cycle/cross-PC read-back, and matching device
 receipts in a future adapter. A host cache can never be promoted to device identity. In this
 round the Aggregator tree is a synthetic mock fixture for exercising the interaction; the
-same parent row simultaneously says `SYNTHETIC PATH` and `HW UNAVAILABLE`. It does not
+device-source tooltip states the synthetic boundary without expanding every row. It does not
 claim discovery, 10GbE streaming, synchronization, or hardware qualification.
+
+The visible hierarchy follows the Codex desktop project's parent/thread rhythm without copying
+branding: one continuous navigation surface, folder-like parent rows, indented child rows, a soft
+full-row selection fill, and no per-device border or card. Pod sampling and route details appear
+on hover/focus and remain in the accessible name. Rename and multi-Run membership controls appear
+only when the row is hovered, focused, already selected for a Run, or reached by keyboard. Group
+collapse, row hover, and selection are local presentation state; the adapter's `PodKey`, immutable
+identity, Preview selection, and frozen Run membership remain independent.
 
 ## Receipt-driven lifecycle
 
@@ -419,7 +476,8 @@ work outside the GUI does not silently upgrade these rows.
 - At 1080 px, source, Preview, phase, Record/Stop text, recovery action, and the single compact
   Run result remain visible without resizing the signal workbench or causing document-level
   horizontal scroll.
-- Critical controls provide at least a 44 × 44 px hit area with at least 8 px separation.
+- Consequential Run controls provide at least a 44 × 44 px hit area. Dense desktop navigation and
+  low-risk icon controls may use a 36 px row/target with visible focus and an accessible name.
 - `Tab` order follows top command bar -> device list -> preview -> right controls; the non-interactive
   Run result is announced through its live region rather than inserted as an empty keyboard stop.
   `F6` may cycle the interactive major regions.
@@ -443,7 +501,8 @@ The normative budgets remain in `PERFORMANCE_BUDGET.md`:
 - no network request or runtime font download is needed to render the shell;
 - first meaningful instrument shell target is under 500 ms after WebView warm-up on the
   reference acquisition PC;
-- initial production bundle budgets are 100 kB gzip JavaScript and 10 kB gzip CSS;
+- initial production bundle budgets are 100 KiB gzip JavaScript and 16 KiB gzip CSS;
+- complete lazy-loaded payload budgets are 112 KiB gzip JavaScript and 18 KiB gzip CSS;
 - machine/status and health updates are 5 Hz normally and 10 Hz maximum;
 - display envelopes are at most 30 frames/s; React commits outside the trace surface are at
   most 10/s while streaming;

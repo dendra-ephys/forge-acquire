@@ -20,19 +20,19 @@ export interface DeviceNameDialogProps {
 const PERSISTENCE_COPY: Record<DeviceNamePersistence, { label: string; detail: string }> = {
   device_nonvolatile: {
     label: "DEVICE NVM",
-    detail: "保存由设备确认后写入设备非易失存储，并随设备保留。",
+    detail: "The device confirms a write to nonvolatile storage, and the name remains with the device.",
   },
   mock_session: {
     label: "MOCK SESSION",
-    detail: "仅 mock 会话，不代表跨电脑写入设备 NVM。",
+    detail: "Mock session only; this does not represent a cross-computer device NVM write.",
   },
   host_local: {
     label: "HOST LOCAL",
-    detail: "仅保存在当前主机，不改变设备非易失存储。",
+    detail: "Stored only on this host; device nonvolatile storage is unchanged.",
   },
   none: {
     label: "NOT PERSISTED",
-    detail: "当前 adapter 不提供名称持久化。",
+    detail: "The current adapter does not provide name persistence.",
   },
 };
 
@@ -47,12 +47,12 @@ function displayUtf8ByteCount(value: string): number {
 function validateDisplayName(value: string, maxUtf8Bytes: number | null): string | null {
   const normalized = value.trim().normalize("NFC");
   const length = displayCharacterCount(normalized);
-  if (length === 0) return "名称不能为空。";
-  if (length > 48) return "名称不能超过 48 个字符。";
+  if (length === 0) return "Name cannot be empty.";
+  if (length > 48) return "Name cannot exceed 48 characters.";
   if (maxUtf8Bytes !== null && displayUtf8ByteCount(normalized) > maxUtf8Bytes) {
-    return `名称的 UTF-8 编码不能超过 ${maxUtf8Bytes} bytes。`;
+    return `The UTF-8 name cannot exceed ${maxUtf8Bytes} bytes.`;
   }
-  if (/\p{Cc}/u.test(normalized)) return "名称不能包含控制字符。";
+  if (/\p{Cc}/u.test(normalized)) return "Name cannot contain control characters.";
   return null;
 }
 
@@ -117,13 +117,13 @@ export function DeviceNameDialog({
           <header className="dialog-header">
             <div>
               <span className="instrument-kicker">DEVICE DISPLAY NAME</span>
-              <h2 id="device-name-dialog-title">重命名 {kindLabel}</h2>
-              <p id={descriptionId}>名称可以改变；不可变设备 ID 与连接路径不会改变。</p>
+              <h2 id="device-name-dialog-title">Rename {kindLabel}</h2>
+              <p id={descriptionId}>The display name can change. The immutable device ID and route cannot.</p>
             </div>
             <button
               className="dialog-close"
               type="button"
-              aria-label="关闭设备重命名"
+              aria-label="Close device rename"
               disabled={saving}
               data-modal-initial-focus={!identity.writable ? true : undefined}
               onClick={requestCancel}
@@ -150,7 +150,7 @@ export function DeviceNameDialog({
             </div>
 
             <label className="device-name-field" htmlFor={inputId}>
-              <span>设备显示名称</span>
+              <span>Device display name</span>
               <span className="device-name-field__input">
                 <PencilLine size={16} aria-hidden="true" />
                 <input
@@ -183,15 +183,15 @@ export function DeviceNameDialog({
                   {identity.crossHostPersistenceQualified
                     && identity.powerLossSafeWriteQualified
                     && identity.nameReadBackVerified
-                    ? "跨电脑读取、掉电安全写入与回读收据均已证明。"
-                    : "跨电脑读取或掉电安全写入尚未由硬件 qualification receipt 证明。"}
+                    ? "Cross-computer reads, power-safe writes, and readback receipts are qualified."
+                    : "Cross-computer reads or power-safe writes are not yet proven by a hardware qualification receipt."}
                 </span>
               </p>
             </div>
 
             {!identity.writable || identity.identityEvidenceHash === null ? (
               <p className="device-name-dialog__blocked" role="note">
-                此 identity 当前不可写：<code>{identity.identityEvidenceHash === null ? "NO_IDENTITY_RECEIPT" : identity.reasonCode}</code>
+                This identity is not writable: <code>{identity.identityEvidenceHash === null ? "NO_IDENTITY_RECEIPT" : identity.reasonCode}</code>
               </p>
             ) : null}
 
@@ -209,7 +209,7 @@ export function DeviceNameDialog({
               disabled={saving}
               onClick={requestCancel}
             >
-              取消
+              Cancel
             </button>
             <button
               className="instrument-button instrument-button--finalize device-name-dialog__save"
@@ -217,7 +217,7 @@ export function DeviceNameDialog({
               disabled={saveDisabled}
             >
               <Save size={16} aria-hidden="true" />
-              {saving ? "正在保存…" : "保存名称"}
+              {saving ? "Saving…" : "Save name"}
             </button>
           </footer>
         </form>

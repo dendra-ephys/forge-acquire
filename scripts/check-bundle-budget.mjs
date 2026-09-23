@@ -5,18 +5,22 @@ import { extname, join, resolve } from "node:path";
 const dist = resolve("dist");
 const startupBudgets = new Map([
   [".js", 100 * 1024],
-  [".css", 10 * 1024],
+  // The dual-theme instrument token layer and the selected Apps SDK UI
+  // primitives are shipped up front so the Tauri WebView never flashes an
+  // unthemed surface. Keep the increase bounded and gzip-measured.
+  [".css", 16 * 1024],
 ]);
 // Recording setup and the filesystem browser are intentional on-demand chunks.
 // Keep the acquisition console's startup budget unchanged, and separately cap
 // the complete offline payload so lazy loading cannot hide unbounded growth.
 const totalBudgets = new Map([
   [".js", 112 * 1024],
-  [".css", 12 * 1024],
+  [".css", 18 * 1024],
 ]);
 const totals = new Map([...totalBudgets.keys()].map((extension) => [extension, 0]));
 const startupTotals = new Map([...startupBudgets.keys()].map((extension) => [extension, 0]));
-const forbiddenRuntimeUrls = /https?:\/\//i;
+const forbiddenHtmlRuntimeUrls = /https?:\/\//i;
+const forbiddenCssRuntimeUrls = /(?:@import\s+(?:url\()?\s*["']?https?:\/\/|url\(\s*["']?https?:\/\/)/i;
 const forbiddenProductionCspSources = /127\.0\.0\.1|(?:^|[;\s])wss?:/i;
 
 async function walk(directory) {
@@ -47,9 +51,15 @@ for (const path of files) {
   // JavaScript. They are not network requests. The offline shell gate checks
   // resource-bearing HTML/CSS; production network APIs are separately denied
   // by the Tauri CSP and reviewed at the adapter boundary.
-  if ([".html", ".css"].includes(extension)) {
+  if (extension === ".html") {
     const text = content.toString("utf8");
-    if (forbiddenRuntimeUrls.test(text)) {
+    if (forbiddenHtmlRuntimeUrls.test(text)) {
+      throw new Error(`production shell contains a runtime network URL: ${path}`);
+    }
+  }
+  if (extension === ".css") {
+    const textWithoutComments = content.toString("utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    if (forbiddenCssRuntimeUrls.test(textWithoutComments)) {
       throw new Error(`production shell contains a runtime network URL: ${path}`);
     }
   }

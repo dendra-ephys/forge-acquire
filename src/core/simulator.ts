@@ -124,7 +124,7 @@ export class SimulatorBackend {
     this.addEvent(
       "info",
       "SIMULATOR_SYNTHETIC_ONLY",
-      "已选择确定性演示源；未连接任何硬件，也不会写入原始神经数据。",
+      "Deterministic demo source selected; no hardware is connected and no raw neural data will be written.",
     );
   }
 
@@ -149,14 +149,14 @@ export class SimulatorBackend {
     this.addEvent(
       "info",
       "SIMULATOR_CONNECTED",
-      "演示源已连接；这不是 Receiver Pod 硬件连接。",
+      "Demo source connected; this is not a Receiver Pod hardware connection.",
     );
     this.publish();
   }
 
   startMonitoring(): SystemSnapshot {
     if (this.machine.transport !== "open") {
-      throw new Error("请先连接演示源，再开始监看");
+      throw new Error("Connect the demo source before starting Preview");
     }
     if (this.machine.acquisition === "streaming") return this.getSnapshot();
 
@@ -170,7 +170,7 @@ export class SimulatorBackend {
     this.addEvent(
       "info",
       "SIMULATOR_MONITORING",
-      "确定性合成波形已开始显示。",
+      "Deterministic synthetic waveform display started.",
     );
     this.publish();
     return this.getSnapshot();
@@ -178,30 +178,30 @@ export class SimulatorBackend {
 
   stopMonitoring(): SystemSnapshot {
     if (["opening", "armed", "writing", "flushing"].includes(this.machine.writer)) {
-      throw new Error("请先结束并完成演示 Run，再停止监看");
+      throw new Error("End and complete the demo Run before stopping Preview");
     }
     if (this.machine.acquisition !== "streaming") return this.getSnapshot();
 
     this.machine = transitionMachine(this.machine, { type: "STOP_MONITOR" });
     this.endMonitoring(this.now());
-    this.addEvent("info", "SIMULATOR_MONITORING_STOPPED", "合成波形显示已停止。");
+    this.addEvent("info", "SIMULATOR_MONITORING_STOPPED", "Synthetic waveform display stopped.");
     this.publish();
     return this.getSnapshot();
   }
 
   startRecording(runId?: string): SystemSnapshot {
     if (!isNewRunCatalogEligible(this.headstageProfile.id)) {
-      throw new Error("该 Headstage 仅用于历史解码，不能开始新的演示 Run");
+      throw new Error("This Headstage is for historical decoding only and cannot start a new demo Run");
     }
     if (this.machine.transport !== "open") {
-      throw new Error("请先连接演示源，再开始演示 Run");
+      throw new Error("Connect the demo source before starting a demo Run");
     }
     if (["opening", "armed", "writing", "flushing"].includes(this.machine.writer)) {
-      throw new Error("已有演示 Run 生命周期处于活动状态");
+      throw new Error("A demo Run lifecycle is already active");
     }
 
     if (this.machine.writer === "failed") {
-      throw new Error("请先确认并归档失败的演示 Run，再开始新 Run");
+      throw new Error("Acknowledge and archive the failed demo Run before starting a new Run");
     }
 
     if (this.machine.writer === "finalized") {
@@ -219,7 +219,7 @@ export class SimulatorBackend {
     this.machine = transitionMachine(this.machine, { type: "WRITER_ARMED" });
     this.machine = transitionMachine(this.machine, { type: "RECORDING_CONFIRMED" });
     if (this.machine.writer === previousWriter || this.machine.writer !== "writing") {
-      throw new Error("当前状态不能开始演示 Run");
+      throw new Error("A demo Run cannot start from the current state");
     }
 
     const now = this.now();
@@ -229,7 +229,7 @@ export class SimulatorBackend {
     this.addEvent(
       "warning",
       "SIMULATOR_RECORDING_NO_RAW_FILE",
-      `演示 Run ${syntheticRunId} 已开始，仅用于界面验证；不会写入 raw 文件。`,
+      `Demo Run ${syntheticRunId} started for UI validation only; no raw file will be written.`,
     );
     this.publish();
     return this.getSnapshot();
@@ -237,7 +237,7 @@ export class SimulatorBackend {
 
   async stopRecording(): Promise<void> {
     if (this.machine.writer !== "writing") {
-      throw new Error("当前没有活动的演示 Run");
+      throw new Error("There is no active demo Run");
     }
 
     const now = this.now();
@@ -248,7 +248,7 @@ export class SimulatorBackend {
     this.addEvent(
       "info",
       "SIMULATOR_FLUSHING",
-      "正在结束演示 metadata 生命周期；不存在 raw 数据载荷。",
+      "Ending the demo metadata lifecycle; no raw data payload exists.",
     );
     this.publish();
 
@@ -261,7 +261,7 @@ export class SimulatorBackend {
     this.addEvent(
       "info",
       "SIMULATOR_FINALIZED",
-      "演示生命周期已完成；这不构成硬件记录或 raw 文件证据。",
+      "Demo lifecycle complete; this is not evidence of hardware recording or a raw file.",
     );
     this.publish();
   }
@@ -277,8 +277,8 @@ export class SimulatorBackend {
       wasRecording ? "error" : "info",
       wasRecording ? "SIMULATOR_RECORDING_INTERRUPTED" : "SIMULATOR_DISCONNECTED",
       wasRecording
-        ? "演示 Run 在完成前被中断。"
-        : "演示源已断开。",
+        ? "The demo Run was interrupted before completion."
+        : "The demo source was disconnected.",
     );
     this.publish();
     return this.getSnapshot();
@@ -317,7 +317,7 @@ export class SimulatorBackend {
     this.addEvent(
       "info",
       "SIMULATOR_MARKER_CAPTURED",
-      `演示标记“${saved.label}”已保存；沿用打开对话框前捕获的主机单调时间。`,
+      `Demo marker “${saved.label}” saved using the host monotonic time captured before the dialog opened.`,
     );
     this.publish();
     return { ...saved };
@@ -370,7 +370,7 @@ export class SimulatorBackend {
 
   getTraceBlock(request: SimulatorTraceRequest = {}): TraceBlock {
     if (this.machine.acquisition !== "streaming") {
-      throw new Error("只有监看期间可以读取合成波形");
+      throw new Error("Synthetic waveforms can be read only while Preview is active");
     }
 
     const podId = request.podId ?? this.podId;
@@ -379,7 +379,7 @@ export class SimulatorBackend {
     const pointsPerChannel = request.pointsPerChannel ?? 400;
     const sampleWindowSeconds = request.sampleWindowSeconds ?? 1;
 
-    if (podId !== this.podId) throw new RangeError(`未知演示 Pod：${podId}`);
+    if (podId !== this.podId) throw new RangeError(`Unknown demo Pod: ${podId}`);
     if (!Number.isInteger(channelOffset) || channelOffset < 0) {
       throw new RangeError("channelOffset must be a non-negative integer");
     }
@@ -387,7 +387,7 @@ export class SimulatorBackend {
       throw new RangeError("channelCount must be a positive integer");
     }
     if (channelOffset + channelCount > this.channelCount) {
-      throw new RangeError("请求的演示通道超过可用通道数");
+      throw new RangeError("The requested demo channel exceeds the available channel count");
     }
     if (!Number.isInteger(pointsPerChannel) || pointsPerChannel < 2) {
       throw new RangeError("pointsPerChannel must be an integer of at least 2");
@@ -565,9 +565,9 @@ export class SimulatorBackend {
       receiptGapCount: 0,
       duplicateReceiptCount: 0,
       unavailableReasons: [
-        "模拟器没有 RHS2116 硬件能力",
-        "未连接独立 Rust SafetyArbiter",
-        "没有已批准的 Safety Profile 与实体联锁证据",
+        "Simulator has no RHS2116 hardware capability",
+        "Independent Rust SafetyArbiter is not connected",
+        "No approved Safety Profile or physical-interlock evidence is present",
       ],
     };
   }

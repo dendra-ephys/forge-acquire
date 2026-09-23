@@ -5,6 +5,11 @@ Pod, HIL, scientific-validity, or release evidence.
 
 Scenario identifier: `forge.synthetic.neural.integer.v1`.
 
+The canonical fixture below remains the protected replay and qualification
+oracle. The browser mock now uses a separate NWB-derived reconstruction for
+operator-facing waveform realism; see [NWB_DERIVED_DEMO.md](NWB_DERIVED_DEMO.md).
+That demo does not change any formula, golden vector, or acceptance rule below.
+
 ## Purpose
 
 Forge uses one continuous synthetic neural ADC stream to test that acquisition,
@@ -144,10 +149,10 @@ same synthetic sample timeline. Each v3 window contains every event-aligned wave
 whose center remains inside the declared source-sample TTL, plus statistics computed from that
 exact set, explicit coverage, and evidence identifiers.
 
-`全部波形` is the default display mode and draws all returned snippets in one Canvas pass as
-soon as the next bounded Preview frame arrives. `统计` draws mean/p10/p90 and `最新` draws the
-newest snippet without changing the retained event set. A snippet disappears when its center
-leaves the common 1/2/5 s `retentionSamples` window. The mock contract requires observed and
-returned counts to match; exceeding its fixed waveform capacity is a coverage fault rather
-than silent sampling. This software-oracle behavior does not qualify a production detector,
-Intan input, or hardware data path.
+The selected-channel detail always draws all returned snippets in one Canvas pass;
+the separate lower pane shows the same events as one honest `UNSORTED POOL` until a
+sorter supplies cluster assignments. A snippet disappears when its center leaves
+the common 1/2/5 s `retentionSamples` window. The mock contract requires observed
+and returned counts to match; exceeding its fixed waveform capacity is a coverage
+fault rather than silent sampling. This software-oracle behavior does not qualify
+a production detector, Intan input, or hardware data path.

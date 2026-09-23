@@ -315,8 +315,8 @@ describe("SoftwareAcquireAdapter", () => {
       runReceipt: { status: "recovery_required" },
     });
     expect(snapshot.evidence.acquisition.summary).toContain("generated 10 / committed 9 / durable 8");
-    expect(snapshot.evidence.durability.summary).toContain("未封存");
-    expect(snapshot.evidence.durability.summary).toContain("Partial journal");
+    expect(snapshot.evidence.durability.summary).toContain("Unsealed");
+    expect(snapshot.evidence.durability.summary).toContain("partial journal");
 
     software.sendSoftwareReplayRunCommand.mockImplementationOnce(
       async (_pipe: string, _command: number, context: { epoch: number }, requestId: number) => ({
@@ -345,7 +345,7 @@ describe("SoftwareAcquireAdapter", () => {
       stateAtAcceptance: "recovery_required",
       requestedState: "connected_idle",
     });
-    expect(acknowledge.message).toContain("partial journal 保留");
+    expect(acknowledge.message).toContain("partial journal remains");
     expect(software.sendSoftwareReplayRunCommand).toHaveBeenLastCalledWith(
       expect.any(String),
       7,

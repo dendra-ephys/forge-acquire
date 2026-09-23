@@ -289,7 +289,7 @@ export async function readHardwareSnapshot(requestId: number): Promise<HardwareS
 export class HardwareSnapshotPoller {
   private nextRequestId = 1;
   private inFlight: Promise<HardwareStatusView> | null = null;
-  private latest: HardwareStatusView = { kind: "unknown", reason: "尚未查询硬件服务" };
+  private latest: HardwareStatusView = { kind: "unknown", reason: "Hardware service has not been queried" };
   private lastAcceptedSnapshot: HardwareServiceSnapshot | null = null;
 
   get status(): HardwareStatusView {
@@ -299,7 +299,7 @@ export class HardwareSnapshotPoller {
   poll(): Promise<HardwareStatusView> {
     if (this.inFlight !== null) return this.inFlight;
     if (this.nextRequestId > Number.MAX_SAFE_INTEGER) {
-      this.latest = { kind: "stale", reason: "硬件状态请求 ID 已耗尽；已停止轮询" };
+      this.latest = { kind: "stale", reason: "Hardware-status request IDs are exhausted; polling stopped" };
       return Promise.resolve(this.latest);
     }
     const requestId = this.nextRequestId;
@@ -316,7 +316,7 @@ export class HardwareSnapshotPoller {
 
   accept(result: HardwareSnapshotResult): HardwareStatusView {
     if (!result.reachable || result.snapshot === null) {
-      this.latest = { kind: "stale", reason: result.reason || "硬件服务未响应" };
+      this.latest = { kind: "stale", reason: result.reason || "Hardware service did not respond" };
       return this.latest;
     }
 
@@ -348,7 +348,7 @@ export class HardwareSnapshotPoller {
   markFailure(error: unknown): HardwareStatusView {
     this.latest = {
       kind: "stale",
-      reason: error instanceof Error ? error.message : "无法查询硬件服务",
+      reason: error instanceof Error ? error.message : "Unable to query hardware service",
     };
     return this.latest;
   }

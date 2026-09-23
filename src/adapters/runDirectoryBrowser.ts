@@ -48,16 +48,16 @@ export function directoryBrowserMessage(error: unknown): string {
   const code = typeof error === "object" && error !== null && "code" in error
     ? String(error.code)
     : "";
-  if (code === "access_denied") return "没有权限读取这个文件夹。可返回上一级或输入其他路径。";
-  if (code === "not_found") return "这个文件夹不存在或已经被移走。";
-  if (code === "not_directory") return "输入的路径不是文件夹。";
-  if (code === "not_absolute") return "请输入完整的绝对文件夹路径。";
-  if (code === "unsupported_namespace") return "不支持 Windows 设备命名空间；请选择普通磁盘或 UNC 文件夹。";
-  if (code === "busy") return "上一个文件夹仍在读取，请稍候后重试。";
-  if (code === "invalid_input") return "请输入有效的绝对文件夹路径。";
+  if (code === "access_denied") return "Permission denied. Go to the parent folder or enter another path.";
+  if (code === "not_found") return "This folder does not exist or has moved.";
+  if (code === "not_directory") return "The path is not a folder.";
+  if (code === "not_absolute") return "Enter a complete absolute folder path.";
+  if (code === "unsupported_namespace") return "Windows device namespaces are unsupported. Choose a standard drive or UNC folder.";
+  if (code === "busy") return "The previous folder is still loading. Try again shortly.";
+  if (code === "invalid_input") return "Enter a valid absolute folder path.";
   return error instanceof Error && error.message
     ? error.message
-    : "桌面端未能读取这个文件夹。";
+    : "Forge Desktop could not read this folder.";
 }
 
 type InvokeCommand = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
@@ -100,7 +100,7 @@ function parsePathItem(
     && isAbsoluteDisplayPath(value.path)) {
     return { name: value.name, path: value.path };
   }
-  throw new RunDirectoryBrowserError("桌面端返回了无效的目录条目。", "invalid_response", false);
+  throw new RunDirectoryBrowserError("Forge Desktop returned an invalid directory entry.", "invalid_response", false);
 }
 
 function parseListing(value: unknown, expectedRequestId: number): RunDirectoryListing {
@@ -120,7 +120,7 @@ function parseListing(value: unknown, expectedRequestId: number): RunDirectoryLi
     || value.validationScope !== "browse_only"
     || value.roots.length > 26
     || value.directories.length > value.entryLimit) {
-    throw new RunDirectoryBrowserError("桌面端返回了无效的目录列表。", "invalid_response", false);
+    throw new RunDirectoryBrowserError("Forge Desktop returned an invalid directory listing.", "invalid_response", false);
   }
 
   const roots = value.roots.map((item) => parsePathItem(item, "root") as RunDirectoryRoot);
@@ -129,7 +129,7 @@ function parseListing(value: unknown, expectedRequestId: number): RunDirectoryLi
   );
   if (new Set(roots.map((item) => item.path.toLocaleLowerCase())).size !== roots.length
     || new Set(directories.map((item) => item.path.toLocaleLowerCase())).size !== directories.length) {
-    throw new RunDirectoryBrowserError("桌面端返回了重复的目录路径。", "invalid_response", false);
+    throw new RunDirectoryBrowserError("Forge Desktop returned duplicate directory paths.", "invalid_response", false);
   }
 
   return {
@@ -164,7 +164,7 @@ function mapCommandError(value: unknown): RunDirectoryBrowserError {
   if (typeof value === "string" && value.length > 0) {
     return new RunDirectoryBrowserError(value, "invoke_error", true);
   }
-  return new RunDirectoryBrowserError("桌面端未能读取这个文件夹。", "invoke_error", true);
+  return new RunDirectoryBrowserError("Forge Desktop could not read this folder.", "invoke_error", true);
 }
 
 class TauriRunDirectoryBrowser implements RunDirectoryBrowser {
@@ -177,12 +177,12 @@ class TauriRunDirectoryBrowser implements RunDirectoryBrowser {
   browse(directory: string): Promise<RunDirectoryListing> {
     const normalized = directory.trim();
     if (normalized.length === 0) {
-      return Promise.reject(new RunDirectoryBrowserError("请输入绝对文件夹路径。", "invalid_input", false));
+      return Promise.reject(new RunDirectoryBrowserError("Enter an absolute folder path.", "invalid_input", false));
     }
     if (this.pending !== null) {
       if (this.pending.directory === normalized) return this.pending.promise;
       return Promise.reject(new RunDirectoryBrowserError(
-        "上一个文件夹仍在读取，请稍候。",
+        "The previous folder is still loading. Please wait.",
         "busy",
         true,
       ));
@@ -214,7 +214,7 @@ class UnavailableRunDirectoryBrowser implements RunDirectoryBrowser {
   readonly available = false;
 
   async browse(): Promise<RunDirectoryListing> {
-    throw new RunDirectoryBrowserError("文件夹浏览仅在 Forge 桌面版可用。", "unavailable", false);
+    throw new RunDirectoryBrowserError("Folder browsing is available only in Forge Desktop.", "unavailable", false);
   }
 }
 

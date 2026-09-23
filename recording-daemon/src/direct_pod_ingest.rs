@@ -3391,8 +3391,8 @@ mod tests {
     fn verified_admission(path: &PathBuf) -> VerifiedFt601Admission {
         let authority = [8; 32];
         let mut bytes = Vec::with_capacity(FT601_ADMISSION_RECEIPT_LEN);
-        bytes.extend_from_slice(b"FGRD3A61");
-        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(b"FGRD3A60");
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
         bytes.extend_from_slice(&(FT601_ADMISSION_RECEIPT_LEN as u16).to_le_bytes());
         bytes.extend_from_slice(&crate::d3xx_admission::FT601_PROFILE_BRINGUP_66_MHZ.to_le_bytes());
         bytes.extend_from_slice(&FT601_ADMISSION_CONTRACT_HASH);

@@ -5,7 +5,7 @@ import { RunControlPanel, type RunControlPanelProps } from "./RunControlPanel";
 
 const noop = () => undefined;
 
-function output(state: RunOutputState, label = "尚未记录", detail = ""): RunOutputSummary {
+function output(state: RunOutputState, label = "Not recorded", detail = ""): RunOutputSummary {
   return {
     state,
     label,
@@ -26,15 +26,10 @@ function renderPanel(overrides: Partial<RunControlPanelProps> = {}): string {
     runId: null,
     previewState: "live",
     recordingTarget: null,
-    preflightPassed: false,
-    recordingArmed: false,
     recording: false,
-    recordingStopped: false,
+    recordingPaused: false,
     runOutput: output("idle"),
-    finalized: false,
     recoveryRequired: false,
-    canConnect: false,
-    canDisconnect: true,
     canStartPreview: false,
     canStopPreview: true,
     canSetupSingleRecording: true,
@@ -43,51 +38,78 @@ function renderPanel(overrides: Partial<RunControlPanelProps> = {}): string {
     recordingDeviceCount: 1,
     previewDeviceName: "Direct Pod 1",
     canStart: false,
+    canPauseRecording: false,
     canStopRecording: false,
     canRecover: false,
     canAcknowledgeFailed: false,
-    onConnect: noop,
-    onDisconnect: noop,
     onStartPreview: noop,
     onStopPreview: noop,
     onSetupSingleRecording: noop,
     onSetupMultiRecording: noop,
     onStart: noop,
+    onToggleRecordingPause: noop,
     onStopRecording: noop,
     onRecover: noop,
     onAcknowledgeFailed: noop,
-    onCollapse: noop,
+    runStatus: <div>Device recording status</div>,
     ...overrides,
   };
   return renderToStaticMarkup(<RunControlPanel {...props} />);
 }
 
 describe("RunControlPanel", () => {
-  it("offers explicit single- and multi-device setup entries but only one actual Start action", () => {
+  it("separates Preview and Recording into explicit actions", () => {
     const markup = renderPanel();
 
-    expect(markup).toContain("单设备记录…");
-    expect(markup).toContain("多设备记录…");
-    expect(markup).toContain("冻结当前 Preview 设备：Direct Pod 1；只进入设置，不开始记录");
-    expect(markup).toContain("开始记录 · 1 台");
+    expect(markup).toContain('aria-label="Single-device setup"');
+    expect(markup).toContain('aria-label="Multi-device setup"');
+    expect(markup).toContain("Single-device setup · Direct Pod 1");
+    expect(markup).toContain("<span>Setup</span>");
+    expect(markup).toContain("<span>Multi-Pod</span>");
+    expect(markup).toContain('aria-label="Start recording · 1 device"');
+    expect(markup).toContain("Stop Preview</span>");
+    expect(markup).toContain("Start Recording</button>");
+    expect(markup).toContain('aria-label="Pause recording"');
     expect(markup.match(/instrument-button--record"/g)).toHaveLength(1);
-    expect(markup).not.toContain("同步");
+    expect(markup).not.toContain("Recording lifecycle");
+    expect(markup).not.toContain(">Connect<");
+    expect(markup).not.toContain(">Disconnect<");
+    expect(markup).not.toContain("Sync");
   });
 
-  it("exposes one end-and-save action without a second Finalize command", () => {
+  it("exposes separate pause and end recording actions", () => {
     const markup = renderPanel({
       phase: "recording",
       phaseLabel: "RECORDING",
       runId: "ACTIVE-RUN",
       recording: true,
+      canPauseRecording: true,
       canStopRecording: true,
     });
 
-    expect(markup.match(/结束并保存/g)).not.toHaveLength(0);
+    expect(markup).toContain('aria-label="Pause recording"');
+    expect(markup).toContain(">Pause</button>");
+    expect(markup).toContain('aria-label="End recording"');
+    expect(markup).toContain("End Recording</button>");
     expect(markup.match(/instrument-button--stop"/g)).toHaveLength(1);
-    expect(markup).toContain("一次请求完成停止输入、排空，并生成、验证和发布最终 NWB");
+    expect(markup).toContain("End input, drain, generate, validate, and publish the final NWB");
     expect(markup).not.toContain(">Finalize</button>");
-    expect(markup).not.toContain("封存 Run");
+    expect(markup).not.toContain("Finalize Run");
+  });
+
+  it("turns Pause into Resume after the adapter acknowledges a pause", () => {
+    const markup = renderPanel({
+      phase: "recording",
+      phaseLabel: "RECORDING PAUSED",
+      recording: true,
+      recordingPaused: true,
+      canPauseRecording: true,
+      canStopRecording: true,
+    });
+
+    expect(markup).toContain('aria-label="Resume recording"');
+    expect(markup).toContain(">Resume</button>");
+    expect(markup).toContain('aria-label="End recording"');
   });
 
   it("keeps the compound operation pending until the final NWB receipt is proven", () => {
@@ -95,42 +117,39 @@ describe("RunControlPanel", () => {
       phase: "finalizing",
       phaseLabel: "ENDING / NWB",
       runId: "ACTIVE-RUN",
-      recordingStopped: true,
-      runOutput: output("saving", "正在结束并生成 NWB", "正在生成最终 NWB"),
-      finalized: false,
+      runOutput: output("saving", "Ending and generating NWB", "Generating final NWB"),
+      runStatus: <div>Ending and generating NWB · final NWB receipt arrives</div>,
     });
-    expect(saving).toContain("正在结束并生成 NWB");
-    expect(saving).toContain("最终 NWB 回执到达前不显示保存成功");
+    expect(saving).toContain("Ending and generating NWB");
+    expect(saving).toContain("final NWB receipt arrives");
 
     const rawRetained = renderPanel({
       phase: "finalized",
       phaseLabel: "NWB INCOMPLETE",
       runId: "INCOMPLETE-RUN",
-      recordingStopped: true,
       runOutput: output(
         "raw_retained",
-        "原始数据已保留 · NWB 未完成",
-        "只确认原始 journal 已封存；尚无最终 NWB 发布回执。",
+        "Raw data retained · NWB incomplete",
+        "Only the sealed raw journal is confirmed; there is no final NWB publication receipt.",
       ),
-      finalized: true,
+      runStatus: <div>Raw data retained · NWB incomplete · no final NWB publication receipt</div>,
     });
-    expect(rawRetained).toContain("原始数据已保留 · NWB 未完成");
-    expect(rawRetained).toContain("尚无最终 NWB 发布回执");
-    expect(rawRetained).not.toContain("NWB 已保存");
+    expect(rawRetained).toContain("Raw data retained · NWB incomplete");
+    expect(rawRetained).toContain("no final NWB publication receipt");
+    expect(rawRetained).not.toContain("NWB saved");
 
     const saved = renderPanel({
       phase: "finalized",
       phaseLabel: "NWB SAVED",
       runId: "SEALED-RUN",
-      recordingStopped: true,
       runOutput: output(
         "nwb_saved",
-        "NWB 已保存",
-        "已生成、验证并以新文件发布：F:\\ForgeRuns\\FORGE-RUN-001.nwb",
+        "NWB saved",
+        "Generated, validated, and published as a new file: F:\\ForgeRuns\\FORGE-RUN-001.nwb",
       ),
-      finalized: true,
+      runStatus: <div>NWB saved · F:\ForgeRuns\FORGE-RUN-001.nwb</div>,
     });
-    expect(saved).toContain("NWB 已保存");
+    expect(saved).toContain("NWB saved");
     expect(saved).toContain("FORGE-RUN-001.nwb");
   });
 
@@ -139,13 +158,12 @@ describe("RunControlPanel", () => {
       phase: "finalized",
       phaseLabel: "SIMULATION COMPLETE",
       runId: "MOCK-RUN",
-      recordingStopped: true,
-      runOutput: output("mock_complete", "模拟流程完成", "未创建记录文件，也未生成 NWB。"),
-      finalized: true,
+      runOutput: output("mock_complete", "Simulation complete", "No recording file or NWB was created."),
+      runStatus: <div>Simulation complete · No recording file or NWB was created.</div>,
     });
 
-    expect(markup).toContain("模拟流程完成");
-    expect(markup).toContain("未创建记录文件，也未生成 NWB");
+    expect(markup).toContain("Simulation complete");
+    expect(markup).toContain("No recording file or NWB was created");
     expect(markup).not.toContain("NWB SAVED");
   });
 
@@ -153,16 +171,16 @@ describe("RunControlPanel", () => {
     const markup = renderPanel({
       phase: "recovery_required",
       phaseLabel: "RECOVERY REQUIRED",
-      phaseDetail: "未封存；generated 10 / committed 9 / durable 8",
+      phaseDetail: "Unsealed; generated 10 / committed 9 / durable 8",
       runId: "FAILED-RUN",
       recoveryRequired: true,
       canStopPreview: true,
       canAcknowledgeFailed: true,
     });
 
-    expect(markup).toContain("确认失败并关闭 Run");
-    expect(markup).toContain("保留 partial journal");
-    expect(markup).toContain("不补写 seal");
+    expect(markup).toContain("Acknowledge failure");
+    expect(markup).toContain("partial journal is retained");
+    expect(markup).toContain("fabricated seal");
     expect(markup).not.toContain(">Recover<");
   });
 
@@ -175,37 +193,23 @@ describe("RunControlPanel", () => {
       canAcknowledgeFailed: false,
     });
 
-    expect(markup).toContain("当前 snapshot 未提供可执行的 GUI 恢复命令");
+    expect(markup).toContain("current snapshot provides no GUI recovery command");
     expect(markup).not.toContain(">Recover<");
-    expect(markup).not.toContain("确认失败并关闭 Run");
+    expect(markup).not.toContain("Acknowledge failure");
   });
 
-  it("does not offer a fake Connect action while an active Run is waiting for control recovery", () => {
+  it("keeps daemon connection controls and the decorative lifecycle strip out of the operator panel", () => {
     const markup = renderPanel({
       connected: false,
-      canConnect: false,
       runId: "ACTIVE-RUN",
       phase: "recording",
       phaseLabel: "CONTROL LOST",
     });
 
-    expect(markup).toContain("等待控制面恢复");
-    expect(markup).toContain("Run 仍由独立 daemon 持有");
     expect(markup).not.toContain(">Connect<");
-  });
-
-  it("disables explicit Disconnect while a Run still needs its control path", () => {
-    const markup = renderPanel({
-      phase: "recording",
-      phaseLabel: "RECORDING",
-      runId: "ACTIVE-RUN",
-      recording: true,
-      canDisconnect: false,
-      canStopRecording: true,
-    });
-
-    expect(markup).toContain("当前 Run 尚未结束；必须保留控制连接");
-    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*title="当前 Run 尚未结束/);
-    expect(markup).toContain(">Disconnect<");
+    expect(markup).not.toContain(">Disconnect<");
+    expect(markup).not.toContain("Recording lifecycle");
+    expect(markup).not.toContain(">Armed<");
+    expect(markup).not.toContain(">Final NWB<");
   });
 });

@@ -54,9 +54,9 @@ export function RunDirectoryBrowserView({
 
   const currentPathDescription = useMemo(() => {
     if (errorMessage !== null && listing !== null) {
-      return `未进入请求的文件夹；当前仍为 ${listing.currentDirectory}`;
+      return `The requested folder was not opened. Current folder: ${listing.currentDirectory}`;
     }
-    return listing?.currentDirectory ?? "尚未读取文件夹";
+    return listing?.currentDirectory ?? "No folder loaded";
   }, [errorMessage, listing]);
 
   const focusEntry = (index: number) => {
@@ -89,7 +89,7 @@ export function RunDirectoryBrowserView({
         data-testid="run-directory-browser"
         data-picker-state={state}
       >
-        <section className="run-directory-current" aria-label="当前文件夹">
+        <section className="run-directory-current" aria-label="Current folder">
           <div>
             <span>CURRENT FOLDER</span>
             <strong
@@ -102,19 +102,19 @@ export function RunDirectoryBrowserView({
             data-testid="run-directory-parent"
             type="button"
             disabled={loading || listing?.parentDirectory == null}
-            title={listing?.parentDirectory == null ? "已到文件系统根目录" : "打开上一级文件夹"}
+            title={listing?.parentDirectory == null ? "At the filesystem root" : "Open parent folder"}
             onClick={() => {
               if (listing?.parentDirectory) onBrowse(listing.parentDirectory);
             }}
           >
             <ArrowUp size={17} aria-hidden="true" />
-            上一级
+            Parent
           </button>
         </section>
 
         {listing && listing.roots.length > 0 ? (
-          <nav className="run-directory-roots" aria-label="本机磁盘">
-            <span>磁盘</span>
+          <nav className="run-directory-roots" aria-label="Local drives">
+            <span>Drives</span>
             <div>
               {listing.roots.map((root) => (
                 <button
@@ -122,7 +122,7 @@ export function RunDirectoryBrowserView({
                   type="button"
                   key={root.path}
                   disabled={loading}
-                  aria-label={`打开磁盘 ${root.label}`}
+                  aria-label={`Open drive ${root.label}`}
                   onClick={() => onBrowse(root.path)}
                 >
                   <HardDrive size={15} aria-hidden="true" />
@@ -140,7 +140,7 @@ export function RunDirectoryBrowserView({
             if (!loading && draftPath.trim().length > 0) onBrowse(draftPath.trim());
           }}
         >
-          <label htmlFor="run-directory-path">文件夹路径</label>
+          <label htmlFor="run-directory-path">Folder path</label>
           <div>
             <input
               ref={pathInputRef}
@@ -159,7 +159,7 @@ export function RunDirectoryBrowserView({
               disabled={loading || draftPath.trim().length === 0}
             >
               <CornerDownRight size={17} aria-hidden="true" />
-              转到
+              Go
             </button>
           </div>
         </form>
@@ -171,28 +171,28 @@ export function RunDirectoryBrowserView({
             data-testid="run-directory-error"
             role="alert"
           >
-            <strong>无法读取这个文件夹</strong>
+            <strong>Cannot read this folder</strong>
             <span>{errorMessage}</span>
           </div>
         ) : null}
 
         <section className="run-directory-children" aria-labelledby="run-directory-children-title">
           <header>
-            <span id="run-directory-children-title">子文件夹</span>
-            <small>{listing ? `${directories.length} 项` : "等待读取"}</small>
+            <span id="run-directory-children-title">Folders</span>
+            <small>{listing ? `${directories.length} items` : "Waiting"}</small>
           </header>
           <div
             className="run-directory-list"
             data-testid="run-directory-list"
             data-total-count={directories.length}
             role="listbox"
-            aria-label="当前文件夹的直接子文件夹"
+            aria-label="Immediate subfolders"
             aria-busy={loading}
           >
             {loading && listing === null ? (
               <div className="run-directory-message" role="status">
                 <RefreshCw className="is-spinning" size={17} aria-hidden="true" />
-                <span>正在读取文件夹…</span>
+                <span>Reading folder…</span>
               </div>
             ) : directories.length > 0 ? directories.map((directory, index) => (
               <button
@@ -219,19 +219,19 @@ export function RunDirectoryBrowserView({
               <div className="run-directory-message" role="status" tabIndex={-1}>
                 <Folder size={17} aria-hidden="true" />
                 <span>{errorMessage
-                  ? "可修正上方路径后重试。"
-                  : "当前文件夹没有子文件夹；仍可使用当前文件夹。"}</span>
+                  ? "Correct the path above and try again."
+                  : "This folder has no subfolders. You can still use the current folder."}</span>
               </div>
             )}
           </div>
           {listing?.truncated ? (
             <p className="run-directory-limit" role="status">
-              仅显示前 {listing.entryLimit} 个子文件夹；可在上方输入完整路径。
+              Showing the first {listing.entryLimit} subfolders. Enter a full path above to go directly to another folder.
             </p>
           ) : null}
         </section>
 
-        <p className="run-directory-boundary">这里只选择保存位置；不会在此步骤创建 Run 或文件。</p>
+        <p className="run-directory-boundary">This step selects a save location only; it does not create a Run or file.</p>
       </div>
 
       <footer className="dialog-actions run-directory-actions">
@@ -241,7 +241,7 @@ export function RunDirectoryBrowserView({
           type="button"
           onClick={onCancel}
         >
-          返回记录设置
+          Back to setup
         </button>
         <button
           className="instrument-button instrument-button--arm"
@@ -253,7 +253,7 @@ export function RunDirectoryBrowserView({
           }}
         >
           <Folder size={17} aria-hidden="true" />
-          使用当前文件夹
+          Use current folder
         </button>
       </footer>
     </>

@@ -135,7 +135,7 @@ export function transitionMachine(
         integrity: interrupted ? "invalid" : state.integrity,
         runId: interrupted ? state.runId : null,
         lastFinalizedRunId: state.lastFinalizedRunId,
-        lastError: interrupted ? "连接在记录完成前中断" : null,
+        lastError: interrupted ? "Connection interrupted before recording completed" : null,
       };
     }
   }

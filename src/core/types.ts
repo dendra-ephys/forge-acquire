@@ -57,7 +57,7 @@ export interface PodSnapshot {
   serial: string | null;
   headstageProfileId: import("./hardwareProfiles").HeadstageProfileId | null;
   headstageProfileLabel: string | null;
-  usbBridge: "FT601Q" | null;
+  usbBridge: "FT600Q" | null;
   dhlLinkLocked: boolean | null;
   dhlDescriptorAdmitted: boolean;
   attached: boolean;

@@ -53,6 +53,7 @@ pub mod journal_retention;
 pub(crate) mod nwb_generation_audit;
 mod nwb_publication;
 pub mod nwb_receipt;
+pub mod receiver_pod_v2_session;
 // These owner-internal primitives compile in production so the service can
 // supervise an optional materializer without giving acquisition or public IPC
 // code publication authority. Production launch remains fail-closed until the
@@ -98,14 +99,14 @@ pub use canonical_stream::{
 };
 #[cfg(windows)]
 pub use d3xx::{
-    select_unique_ft601, validate_ft601_configuration, validate_ft601_device_state,
-    validate_ft601_usb_descriptors, D3xxDevice, D3xxDeviceInfo, D3xxLibrary, D3xxReadPoll,
-    Ft601ConfigurationEvidence, Ft601UsbDescriptorEvidence,
+    select_unique_ft600, validate_ft600_configuration, validate_ft600_device_state,
+    validate_ft600_usb_descriptors, D3xxDevice, D3xxDeviceInfo, D3xxLibrary, D3xxReadPoll,
+    Ft600ConfigurationEvidence, Ft600UsbDescriptorEvidence,
 };
 pub use d3xx_admission::{
-    Ft601FifoClockProfile, VerifiedFt601Admission, FT601_ADMISSION_CONTRACT_HASH,
-    FT601_ADMISSION_CONTRACT_HASH_HEX, FT601_ADMISSION_RECEIPT_LEN, FT601_PROFILE_BRINGUP_66_MHZ,
-    FT601_PROFILE_RELEASE_100_MHZ,
+    Ft600FifoClockProfile, VerifiedFt600Admission, FT600_ADMISSION_CONTRACT_HASH,
+    FT600_ADMISSION_CONTRACT_HASH_HEX, FT600_ADMISSION_RECEIPT_LEN, FT600_PROFILE_BRINGUP_66_MHZ,
+    FT600_PROFILE_RELEASE_100_MHZ,
 };
 pub use direct_pod_cabline::{
     DirectPodCablineStatusV1, DirectPodCablineTracker, DirectPodCablineTrackerSnapshot,
@@ -220,6 +221,10 @@ pub use journal_retention::{
     JOURNAL_BACKUP_RECEIPT_SCHEMA,
 };
 pub use nwb_publication::{NwbGenerationPublicationReceiptV1, PublishedNwbGeneration};
+pub use receiver_pod_v2_session::{
+    validate_rps2_frame, Rps2FrameTransport, Rps2Opcode, Rps2SessionControl, Rps2SessionRuntime,
+    Rps2TicketV1, RPS2_FRAME_LEN, RPS2_VERSION,
+};
 // Publication mutates the final namespace and Run ledger. Keep it out of the
 // normal application API/CLI until the service-owner capability and
 // handle-relative generation-root boundary are qualified. The explicit

@@ -36,12 +36,12 @@ export class ProtectedReplayBackend {
     const result = await readDaemonSnapshot();
     if (!result.available || result.snapshot === null) throw new Error(result.reason);
     if (!result.snapshot.protected_replay_available) {
-      throw new Error("SCM daemon 在线，但没有启用 Protected Replay capability");
+      throw new Error("The SCM daemon is online, but Protected Replay capability is disabled");
     }
     this.daemon = result.snapshot;
     this.restoreDaemonContext(result.snapshot);
     this.connected = true;
-    this.addEvent("info", "REPLAY_DAEMON_CONNECTED", "已认证 SCM daemon；未连接神经采集硬件。");
+    this.addEvent("info", "REPLAY_DAEMON_CONNECTED", "SCM daemon authenticated; no neural acquisition hardware is connected.");
     this.startPolling();
     this.publish();
     return this.getSnapshot();
@@ -49,17 +49,17 @@ export class ProtectedReplayBackend {
 
   disconnect(): SystemSnapshot {
     if (this.daemon?.state === "recording") {
-      throw new Error("关闭 GUI 不会停止 daemon Run；请保留连接状态或先完成 Stop/seal");
+      throw new Error("Closing the GUI does not stop a daemon Run; stay connected or complete Stop and seal first");
     }
     this.connected = false;
     this.stopPolling();
-    this.addEvent("info", "REPLAY_UI_DISCONNECTED", "控制面已断开；daemon 生命周期不归 GUI 所有。");
+    this.addEvent("info", "REPLAY_UI_DISCONNECTED", "Control plane disconnected; the GUI does not own the daemon lifecycle.");
     this.publish();
     return this.getSnapshot();
   }
 
   startMonitoring(): never {
-    throw new Error("Protected Replay 不向 WebView 发送 raw 或波形数据；请直接开始资格 Run");
+    throw new Error("Protected Replay sends no raw or waveform data to the WebView; start the qualification Run directly");
   }
 
   stopMonitoring(): SystemSnapshot {
@@ -67,10 +67,10 @@ export class ProtectedReplayBackend {
   }
 
   async startRecording(): Promise<SystemSnapshot> {
-    if (!this.connected || this.daemon === null) throw new Error("请先连接已认证 SCM daemon");
-    if (this.daemon.state === "failed") throw new Error("必须先确认上一失败 Run");
+    if (!this.connected || this.daemon === null) throw new Error("Connect an authenticated SCM daemon first");
+    if (this.daemon.state === "failed") throw new Error("Acknowledge the previous failed Run first");
     if (!["new", "journal_sealed", "finalized"].includes(this.daemon.state)) {
-      throw new Error(`daemon 当前处于 ${this.daemon.state}，不能开始新 Run`);
+      throw new Error(`The daemon is in ${this.daemon.state}; a new Run cannot start`);
     }
     const nextDaemonEpoch = this.daemon.highest_epoch + 1n;
     const epochValue = nextDaemonEpoch > BigInt(Date.now()) ? nextDaemonEpoch : BigInt(Date.now());
@@ -97,50 +97,50 @@ export class ProtectedReplayBackend {
       throw error;
     }
     this.recordingStartedAt = performance.now();
-    this.addEvent("info", "REPLAY_RUN_STARTED", "Protected Replay 已进入独立 daemon journal 路径。");
+    this.addEvent("info", "REPLAY_RUN_STARTED", "Protected Replay entered the independent daemon journal path.");
     this.publish();
     return this.getSnapshot();
   }
 
   async acknowledgeFailure(): Promise<SystemSnapshot> {
     if (!this.connected || this.daemon?.state !== "failed") {
-      throw new Error("没有需要确认的失败 Run");
+      throw new Error("There is no failed Run to acknowledge");
     }
     if (!this.context) {
-      throw new Error("失败 Run 的冻结上下文不完整；保持 fail-closed 并检查 daemon ledger");
+      throw new Error("The failed Run has an incomplete frozen context; remain fail-closed and inspect the daemon ledger");
     }
     const acknowledgedRunId = this.context.runIdHex;
     const response = await this.command(7);
     if (response.state !== "new") {
-      throw new Error("daemon 接受确认后未回到 New 状态");
+      throw new Error("The daemon did not return to New after accepting acknowledgement");
     }
     this.context = null;
-    this.addEvent("warning", "REPLAY_FAILURE_ACKNOWLEDGED", `已确认失败 Run ${acknowledgedRunId}；旧证据未删除。`);
+    this.addEvent("warning", "REPLAY_FAILURE_ACKNOWLEDGED", `Failed Run ${acknowledgedRunId} acknowledged; prior evidence was not deleted.`);
     this.publish();
     return this.getSnapshot();
   }
 
   async stopRecording(): Promise<SystemSnapshot> {
     if (!this.context || this.daemon?.state !== "recording") {
-      throw new Error("没有可停止的 Protected Replay Run");
+      throw new Error("There is no Protected Replay Run to stop");
     }
     const stopped = await this.command(4);
     if (stopped.state !== "journal_sealed") {
-      throw new Error("Stop 已返回，但 durable journal seal 尚未得到证明");
+      throw new Error("Stop returned, but the durable journal seal is not proven");
     }
     this.finishRecordingClock();
     this.lastSealedRunId = this.context.runIdHex;
-    this.addEvent("info", "REPLAY_JOURNAL_SEALED", "Stop、drain、durability barrier 与 journal seal 已完成。");
+    this.addEvent("info", "REPLAY_JOURNAL_SEALED", "Stop, drain, durability barrier, and journal seal completed.");
     this.publish();
     return this.getSnapshot();
   }
 
   captureMarker(): never {
-    throw new Error("Protected Replay marker journal 尚未接入；不会伪造仅存在于 GUI 的标记");
+    throw new Error("The Protected Replay marker journal is not connected; GUI-only markers will not be fabricated");
   }
 
   saveMarker(_marker: Marker): never {
-    throw new Error("Protected Replay marker journal 尚未接入");
+    throw new Error("The Protected Replay marker journal is not connected");
   }
 
   getSnapshot(): SystemSnapshot {
@@ -270,9 +270,9 @@ export class ProtectedReplayBackend {
         receiptGapCount: 0,
         duplicateReceiptCount: 0,
         unavailableReasons: [
-          "Protected Replay 没有 RHS2116 硬件能力",
-          "算法与刺激路径未接入此资格 Run",
-          "没有实体联锁或已批准 Safety Profile",
+          "Protected Replay has no RHS2116 hardware capability",
+          "Algorithm and stimulation paths are not connected to this qualification Run",
+          "No physical interlock or approved Safety Profile is present",
         ],
       },
       markers: [],

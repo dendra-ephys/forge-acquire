@@ -1,0 +1,40 @@
+forge_receipt ForgeFt600AdmissionReceiptV2 {
+  byte_order = little_endian;
+  version = 2;
+  checksum = crc32c_castagnoli;
+  contract_hash = sha256(utf8_lf(this_file));
+
+  flags ConfigurationProfile : u32 {
+    BRINGUP_66_MHZ = 0x00000001;
+    RELEASE_100_MHZ = 0x00000002;
+  }
+
+  struct Ft600AdmissionReceiptV2 @size(320) {
+    0 magic: bytes[8] = "FGRD3A60";
+    8 version: u16 = 2;
+    10 receipt_len: u16 = 320;
+    // Exactly one ConfigurationProfile bit must be set.
+    12 configuration_profile: ConfigurationProfile;
+    16 contract_hash: bytes[32];
+    48 receipt_id: bytes[16];
+    64 device_id: bytes[16];
+    80 serial_ascii_nul_padded: bytes[16];
+    96 library_sha256: bytes[32];
+    128 configuration_readback_sha256: bytes[32];
+    160 usb_descriptor_sha256: bytes[32];
+    192 hardware_protocol_hash: bytes[32];
+    // Binds the approved FT600 16-bit PCB/RTL build evidence. It is not a
+    // runtime voltage, timing, SerDes, HyperRAM or HIL measurement.
+    224 hardware_build_sha256: bytes[32];
+    256 approval_authority_hash: bytes[32];
+    288 issued_unix_ns: u64;
+    296 expires_unix_ns: u64;
+    304 reserved: bytes[12] = 0;
+    316 crc32c: u32 = crc32c(bytes[0..316]);
+  }
+
+  // This receipt is Forge deployment-admission evidence, not a device-generated
+  // attestation, FTDI licence, online activation or digital signature.
+  // Production loading additionally requires exact out-of-band receipt SHA-256
+  // and approval-authority hash values from protected service configuration.
+}

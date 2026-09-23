@@ -43,7 +43,7 @@ describe("SimulatorBackend", () => {
     expect(snapshot.storagePreflight.eligibleForProtectedRecording).toBe(false);
     expect(snapshot.storagePreflight.requiredUsableBytes).toBe(40_000_000_000_000);
     expect(snapshot.events[0]?.code).toBe("SIMULATOR_SYNTHETIC_ONLY");
-    expect(snapshot.events[0]?.message).toContain("不会写入原始神经数据");
+    expect(snapshot.events[0]?.message).toContain("no raw neural data will be written");
   });
 
   it("uses only an explicit active SKiDL Headstage profile for synthetic channels", async () => {
@@ -60,7 +60,7 @@ describe("SimulatorBackend", () => {
     const backend = new SimulatorBackend({ headstageProfileId: "rhd2132x2" });
     await backend.connect();
     expect(backend.getSnapshot().pods[0]?.headstageProfileId).toBe("rhd2132x2");
-    expect(() => backend.startRecording()).toThrow(/历史解码/);
+    expect(() => backend.startRecording()).toThrow(/historical decoding/);
   });
 
   it("connects, monitors, and emits deterministic synthetic traces", async () => {
@@ -191,6 +191,6 @@ describe("SimulatorBackend", () => {
     expect(disconnected.events.at(-1)?.code).toBe("SIMULATOR_RECORDING_INTERRUPTED");
     await backend.connect();
     expect(() => backend.startRecording("SIM-MUST-NOT-OVERWRITE"))
-      .toThrow("请先确认并归档失败的演示 Run");
+      .toThrow("Acknowledge and archive the failed demo Run");
   });
 });

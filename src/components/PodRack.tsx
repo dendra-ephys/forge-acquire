@@ -1,16 +1,15 @@
 import {
-  Cable,
   ChevronRight,
   CircleAlert,
-  CircleCheck,
   Network,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
-  RadioTower,
   Usb,
 } from "lucide-react";
 import { useState } from "react";
+import { InfoHint } from "./InfoHint";
+import { ThemeToggle } from "./ThemeToggle";
 import type {
   AggregatorSnapshot,
   DeviceIdentitySnapshot,
@@ -26,18 +25,12 @@ export interface PodRackProps {
   onSelect: (podKey: PodKey) => void;
   recordPodKeys: ReadonlySet<PodKey>;
   recordSelectionLocked: boolean;
-  onToggleRecord: (podKey: PodKey, selected: boolean) => void;
+  storageLowPodKeys: ReadonlySet<PodKey>;
   onRequestRename: (kind: DeviceKind, identity: DeviceIdentitySnapshot) => void;
   synthetic: boolean;
   controlConnected: boolean;
   collapsed: boolean;
   onToggleCollapsed: () => void;
-}
-
-function stateIcon(pod: PodSnapshot, connected: boolean) {
-  if (pod.state === "fault") return <CircleAlert size={15} aria-hidden="true" />;
-  if (connected) return <CircleCheck size={15} aria-hidden="true" />;
-  return <Cable size={15} aria-hidden="true" />;
 }
 
 function formatRate(sampleRateHz: number): string {
@@ -46,7 +39,7 @@ function formatRate(sampleRateHz: number): string {
 
 function inputSummary(pod: PodSnapshot): string {
   const input = pod.neuralInput;
-  if (input === null) return "输入描述 unavailable";
+  if (input === null) return "Input description unavailable";
   return `${input.neuralChannelCount} neural · ${formatRate(input.sampleRateHz)}/ch`;
 }
 
@@ -64,99 +57,73 @@ function podPathLabel(pod: PodSnapshot): string {
   return `PC / 10GbE / ${pod.connection.aggregatorId} / PORT ${String(pod.connection.port).padStart(2, "0")} / USB3`;
 }
 
-function nameScopeLabel(identity: DeviceIdentitySnapshot): string {
-  if (identity.persistence === "device_nonvolatile") {
-    return identity.crossHostPersistenceQualified
-      && identity.powerLossSafeWriteQualified
-      && identity.nameReadBackVerified
-      ? "DEVICE NVM ✓"
-      : "DEVICE NVM · QUALIFICATION";
-  }
-  if (identity.persistence === "mock_session") return "MOCK NAME";
-  if (identity.persistence === "host_local") return "THIS PC ONLY";
-  return "NAME NOT PERSISTED";
+function ForgeWaveMark() {
+  return (
+    <svg
+      className="forge-wave-mark"
+      viewBox="0 0 64 64"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 34h8l5-16 8 31 7-23 6 13 5-9h13" />
+    </svg>
+  );
 }
 
 function PodLeaf({
   pod,
   pathLabel,
   selected,
-  recordSelected,
-  recordSelectionLocked,
   connected,
+  storageLow,
   onSelect,
-  onToggleRecord,
   onRequestRename,
 }: {
   pod: PodSnapshot;
   pathLabel: string;
   selected: boolean;
-  recordSelected: boolean;
-  recordSelectionLocked: boolean;
   connected: boolean;
+  storageLow: boolean;
   onSelect: (podKey: PodKey) => void;
-  onToggleRecord: (podKey: PodKey, selected: boolean) => void;
   onRequestRename: (kind: DeviceKind, identity: DeviceIdentitySnapshot) => void;
 }) {
   const state = pod.state === "fault" ? "fault" : connected ? "online" : "warning";
   const displayName = pod.identity.displayName || pod.label;
   return (
     <li
-      className={`pod-device-row${recordSelected ? " is-record-selected" : ""}`}
+      className={`pod-device-row${storageLow ? " has-storage-warning" : ""}`}
       data-pod-key={pod.key}
-      data-record-selected={recordSelected ? "true" : "false"}
+      data-storage-low={storageLow ? "true" : "false"}
     >
       <button
-        className={`pod-leaf pod-leaf--${state}${selected ? " is-selected" : ""}`}
+        className={`pod-leaf pod-leaf--${state}${selected ? " is-selected" : ""}${storageLow ? " has-storage-warning" : ""}`}
         type="button"
-        aria-label={`选择 ${displayName} 进行 Preview；设备 ID ${pod.identity.deviceId}；路径 ${pathLabel}`}
+        aria-label={`Preview ${displayName}; device ID ${pod.identity.deviceId}; path ${pathLabel}`}
         aria-pressed={selected}
+        data-tooltip={`${inputSummary(pod)} · ${selected ? "Current Preview" : podStateLabel(pod, connected)} · ${pathLabel}`}
         onClick={() => onSelect(pod.key)}
       >
-        <span className="pod-leaf__route" title={pathLabel}>PATH · {pathLabel}</span>
         <span className="pod-leaf__body">
           <strong title={displayName}>{displayName}</strong>
-          <span className={`device-name-scope device-name-scope--${pod.identity.persistence}`}>
-            {nameScopeLabel(pod.identity)}
-          </span>
-          <span>{inputSummary(pod)}</span>
-          <span className="device-immutable-id" title={pod.identity.deviceId}>
-            ID · {pod.identity.deviceId}
-          </span>
-          <span className="pod-leaf__detail">
-            {pod.neuralInput?.profileLabel ?? "No headstage input receipt"}
-          </span>
         </span>
-        <span className={`pod-leaf__state pod-leaf__state--${state}`}>
-          {stateIcon(pod, connected)}
-          <span>{selected ? "PREVIEW" : podStateLabel(pod, connected)}</span>
-          <span>· {pod.neuralInput?.scope.toUpperCase() ?? "NO INPUT"}</span>
+        <span
+          className={`pod-leaf__state pod-leaf__state--${state}`}
+        >
+          {pod.state === "fault" ? <CircleAlert size={14} aria-hidden="true" /> : <span aria-hidden="true" />}
+          <span className="sr-only">{selected ? "Current Preview" : podStateLabel(pod, connected)}</span>
         </span>
       </button>
-      <div className="pod-device-actions" role="group" aria-label={`${displayName} 设备操作`}>
-        <label
-          className={`pod-record-toggle${recordSelected ? " is-selected" : ""}`}
-          title={recordSelectionLocked
-            ? "当前 Run 已冻结记录设备集合"
-            : pod.selectable ? "将此 Pod 纳入多设备记录草案；不改变 Preview 设备" : pod.selectionReasonCode}
-        >
-          <input
-            type="checkbox"
-            checked={recordSelected}
-            disabled={!pod.selectable || recordSelectionLocked}
-            aria-label={recordSelectionLocked
-              ? `${displayName} ${recordSelected ? "属于" : "不属于"}当前 Run`
-              : `将 ${displayName} ${recordSelected ? "移出" : "加入"}多设备记录草案`}
-            onChange={(event) => onToggleRecord(pod.key, event.currentTarget.checked)}
-          />
-          <span>{recordSelectionLocked ? "RUN" : "MULTI"}</span>
-        </label>
+      <div className="pod-device-actions" role="group" aria-label={`${displayName} actions`}>
         <button
           className="device-rename-button"
           type="button"
           disabled={!pod.identity.writable}
-          aria-label={`重命名设备 ${displayName}`}
-          title={pod.identity.writable ? `重命名 ${displayName}` : `不可重命名：${pod.identity.reasonCode}`}
+          aria-label={`Rename ${displayName}`}
+          data-tooltip={pod.identity.writable ? `Rename ${displayName}` : `Cannot rename: ${pod.identity.reasonCode}`}
           onClick={() => onRequestRename("pod", pod.identity)}
         >
           <Pencil size={15} aria-hidden="true" />
@@ -176,7 +143,7 @@ export function PodRack({
   onSelect,
   recordPodKeys,
   recordSelectionLocked,
-  onToggleRecord,
+  storageLowPodKeys,
   onRequestRename,
   synthetic,
   controlConnected,
@@ -186,6 +153,7 @@ export function PodRack({
   const [expandedAggregators, setExpandedAggregators] = useState<ReadonlySet<string>>(
     () => new Set(topology.aggregators.map((aggregator) => aggregator.aggregatorId)),
   );
+  const [directExpanded, setDirectExpanded] = useState(true);
   const occupied = topology.directPods.length
     + topology.aggregators.reduce((sum, aggregator) => sum + aggregatorOccupiedPorts(aggregator).length, 0);
   const aggregatedCount = topology.aggregators.reduce(
@@ -206,58 +174,78 @@ export function PodRack({
     return (
       <section
         className="pod-rack pod-rack--collapsed"
-        aria-label="设备列表已收起"
+        aria-label="Device list collapsed"
         data-collapsed="true"
       >
+        <div className="pod-rack-brand pod-rack-brand--collapsed" aria-label="Forge Acquire">
+          <ForgeWaveMark />
+        </div>
         <button
           className="panel-collapse-button panel-collapse-button--vertical"
           type="button"
-          aria-label="展开设备列表"
+          aria-label="Expand device list"
           aria-expanded={false}
-          title="展开设备列表"
+          data-tooltip="Expand devices"
           onClick={onToggleCollapsed}
         >
           <PanelLeftOpen size={18} aria-hidden="true" />
-          <span>设备</span>
+          <span>Devices</span>
         </button>
-        <div className="pod-rack-compact-count" aria-label={`${occupied} 个 Pod 已连接；${recordPodKeys.size} 个 Pod ${recordSelectionLocked ? "属于当前 Run" : "在多设备记录草案"}`}>
+        <div
+          className="pod-rack-compact-count"
+          aria-label={`${occupied} Pods connected; ${recordPodKeys.size} Pods ${recordSelectionLocked ? "in the current Run" : "in the multi-device draft"}`}
+          data-tooltip={`${occupied} of ${topology.maxPodsPerRun} Pod slots are present. ${recordPodKeys.size} ${recordSelectionLocked ? "belong to the active Run" : "are selected in the recording draft"}.`}
+        >
           <strong>{occupied}</strong>
-          <span>/ {topology.maxPodsPerRun}</span>
-          <span>{recordPodKeys.size} {recordSelectionLocked ? "RUN" : "MULTI"}</span>
+          <span>of {topology.maxPodsPerRun}</span>
+          <span className="pod-rack-compact-selection">{recordPodKeys.size} {recordSelectionLocked ? "RUN" : "REC"}</span>
         </div>
         <div className="pod-rack-compact-routes" aria-label={`${topology.directPods.length} direct and ${aggregatedCount} Aggregator Pods`}>
-          <span><Usb size={15} aria-hidden="true" /><b>{topology.directPods.length}</b></span>
-          <span><Network size={15} aria-hidden="true" /><b>{aggregatedCount}</b></span>
+          <span data-tooltip={`${topology.directPods.length} Pods connected directly to this PC over USB 3`}><Usb size={15} aria-hidden="true" /><b>{topology.directPods.length}</b></span>
+          <span data-tooltip={`${aggregatedCount} Pods routed through an Aggregator`}><Network size={15} aria-hidden="true" /><b>{aggregatedCount}</b></span>
         </div>
-        <span className={`pod-rack-compact-state${controlConnected ? " is-connected" : ""}`}>
-          {controlConnected ? "LINK" : "OFF"}
-        </span>
+        <footer className="pod-rack-footer pod-rack-footer--collapsed" aria-label="Appearance">
+          <ThemeToggle />
+        </footer>
       </section>
     );
   }
 
   return (
     <section className="pod-rack" aria-labelledby="pod-rack-title" data-collapsed="false">
+      <div className="pod-rack-brand" aria-label="Forge Acquire">
+        <ForgeWaveMark />
+        <strong>Forge Acquire</strong>
+      </div>
       <header className="instrument-section-heading">
-        <div>
+        <div className="instrument-section-heading__title">
           <span className="instrument-kicker">DEVICES</span>
-          <h2 id="pod-rack-title">设备列表</h2>
+          <div className="instrument-section-heading__title-row">
+            <h2 id="pod-rack-title">Devices</h2>
+            <InfoHint label="About device sources">
+              <strong>Device sources</strong>
+              <span>
+                {synthetic
+                  ? "Devices and routes come from a mock snapshot. Aggregator entries do not prove a live 10GbE connection."
+                  : "Routes, parents, and Pod identities come only from the daemon topology snapshot."}
+              </span>
+            </InfoHint>
+          </div>
         </div>
         <div className="instrument-section-heading__actions">
-          <span className="rack-record-count" aria-label={recordSelectionLocked
-            ? `${recordPodKeys.size} Pods frozen in the current Run`
-            : `${recordPodKeys.size} Pods explicitly selected for a multi-device draft`}>
-            {recordPodKeys.size} {recordSelectionLocked ? "RUN" : "MULTI"}
-          </span>
-          <span className="rack-count" aria-label={`${occupied} of ${topology.maxPodsPerRun} Pods present in snapshot`}>
+          <span
+            className="rack-count"
+            aria-label={`${occupied} of ${topology.maxPodsPerRun} Pods present in snapshot`}
+            data-tooltip={`${occupied} Pods are present in the latest device snapshot. A Run can include at most ${topology.maxPodsPerRun} Pods.`}
+          >
             {occupied}/{topology.maxPodsPerRun}
           </span>
           <button
             className="panel-collapse-button"
             type="button"
-            aria-label="收起设备列表"
+            aria-label="Collapse device list"
             aria-expanded={true}
-            title="收起设备列表"
+            data-tooltip="Collapse devices"
             onClick={onToggleCollapsed}
           >
             <PanelLeftClose size={17} aria-hidden="true" />
@@ -265,32 +253,38 @@ export function PodRack({
         </div>
       </header>
 
-      <div className="pod-topology" aria-label="设备连接列表">
+      <div className="pod-topology" aria-label="Device connections">
         <section className="topology-branch" aria-labelledby="direct-pods-title">
-          <header className="topology-root topology-root--direct">
+          <button
+            className="topology-root topology-root--direct"
+            type="button"
+            aria-expanded={directExpanded}
+            aria-controls="direct-pods"
+            onClick={() => setDirectExpanded((current) => !current)}
+          >
+            <ChevronRight className="topology-root__chevron" size={15} aria-hidden="true" />
             <Usb size={16} aria-hidden="true" />
             <span>
-              <strong id="direct-pods-title">直接连接 PC</strong>
-              <small>USB 3 device · {topology.directPods.length} Pods</small>
+              <strong id="direct-pods-title">Direct to PC</strong>
             </span>
-            <em>DIRECT</em>
-          </header>
-          <ul className="topology-children topology-children--direct">
-            {topology.directPods.map((pod) => (
-              <PodLeaf
-                key={pod.key}
-                pod={pod}
-                pathLabel={podPathLabel(pod)}
-                selected={selectedPodKey === pod.key}
-                recordSelected={recordPodKeys.has(pod.key)}
-                recordSelectionLocked={recordSelectionLocked}
-                connected={controlConnected}
-                onSelect={onSelect}
-                onToggleRecord={onToggleRecord}
-                onRequestRename={onRequestRename}
-              />
-            ))}
-          </ul>
+            <small>{topology.directPods.length}</small>
+          </button>
+          {directExpanded ? (
+            <ul id="direct-pods" className="topology-children topology-children--direct">
+              {topology.directPods.map((pod) => (
+                <PodLeaf
+                  key={pod.key}
+                  pod={pod}
+                  pathLabel={podPathLabel(pod)}
+                  selected={selectedPodKey === pod.key}
+                  connected={controlConnected}
+                  storageLow={storageLowPodKeys.has(pod.key)}
+                  onSelect={onSelect}
+                  onRequestRename={onRequestRename}
+                />
+              ))}
+            </ul>
+          ) : null}
         </section>
 
         {topology.aggregators.map((aggregator) => {
@@ -312,25 +306,17 @@ export function PodRack({
                   <Network size={16} aria-hidden="true" />
                   <span>
                     <strong title={aggregatorName}>{aggregatorName}</strong>
-                    <small>{occupiedPorts.length} Pods · PATH · PC / 10GbE</small>
-                    <small className="device-immutable-id" title={aggregator.identity.deviceId}>
-                      ID · {aggregator.identity.deviceId}
-                    </small>
-                    <small className={`device-name-scope device-name-scope--${aggregator.identity.persistence}`}>
-                      {nameScopeLabel(aggregator.identity)}
-                    </small>
                   </span>
-                  <em>SYNTHETIC PATH</em>
-                  <b>HW {aggregator.hardwareStatus.toUpperCase()}</b>
+                  <small>{occupiedPorts.length}</small>
                 </button>
                 <button
                   className="device-rename-button device-rename-button--aggregator"
                   type="button"
                   disabled={!aggregator.identity.writable}
-                  aria-label={`重命名设备 ${aggregatorName}`}
-                  title={aggregator.identity.writable
-                    ? `重命名 ${aggregatorName}`
-                    : `不可重命名：${aggregator.identity.reasonCode}`}
+                  aria-label={`Rename ${aggregatorName}`}
+                  data-tooltip={aggregator.identity.writable
+                    ? `Rename ${aggregatorName}`
+                    : `Cannot rename: ${aggregator.identity.reasonCode}`}
                   onClick={() => onRequestRename("aggregator", aggregator.identity)}
                 >
                   <Pencil size={15} aria-hidden="true" />
@@ -345,18 +331,13 @@ export function PodRack({
                         pod={pod!}
                         pathLabel={podPathLabel(pod!)}
                         selected={selectedPodKey === pod!.key}
-                        recordSelected={recordPodKeys.has(pod!.key)}
-                        recordSelectionLocked={recordSelectionLocked}
                         connected={controlConnected}
+                        storageLow={storageLowPodKeys.has(pod!.key)}
                         onSelect={onSelect}
-                        onToggleRecord={onToggleRecord}
                         onRequestRename={onRequestRename}
                       />
                     ))}
                   </ul>
-                  <div className="topology-empty-ports">
-                    {aggregator.maxPodPorts - occupiedPorts.length} empty Aggregator ports · {aggregator.hardwareReasonCode}
-                  </div>
                 </div>
               ) : null}
             </section>
@@ -364,14 +345,11 @@ export function PodRack({
         })}
       </div>
 
-      <footer className="rack-boundary-note">
-        <RadioTower size={15} aria-hidden="true" />
-        <span>
-          {synthetic
-            ? "设备与连接树由 mock snapshot 提供；Aggregator 子项不表示 10GbE 硬件已连接。"
-            : "连接路径、父节点与 Pod 身份仅来自 daemon topology snapshot。"}
-        </span>
+      <footer className="pod-rack-footer" aria-label="Appearance">
+        <span>Appearance</span>
+        <ThemeToggle />
       </footer>
+
     </section>
   );
 }

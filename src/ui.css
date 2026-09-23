@@ -1,0 +1,7 @@
+/*
+ * Apps SDK UI's public bundle also includes KaTeX webfonts hosted on a CDN.
+ * Forge Acquire is offline-first and has a strict startup budget, so import
+ * the accessibility/reset foundation while component entrypoints contribute
+ * their own CSS. Product semantics are mapped in forge-theme.css.
+ */
+@import "../node_modules/@openai/apps-sdk-ui/dist/es/styles/base.css";

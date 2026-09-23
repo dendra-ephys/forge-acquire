@@ -66,31 +66,31 @@ export function evaluateStoragePreflight(
   );
   const blockers: string[] = [];
 
-  if (!evidence.targetPath) blockers.push("未选择本机记录卷");
-  if (!evidence.volumeIdentity) blockers.push("未绑定记录卷设备身份");
-  if (evidence.filesystem?.toUpperCase() !== "NTFS") blockers.push("首发 live-write 仅允许本机 NTFS");
+  if (!evidence.targetPath) blockers.push("No local recording volume selected");
+  if (!evidence.volumeIdentity) blockers.push("Recording-volume device identity is not bound");
+  if (evidence.filesystem?.toUpperCase() !== "NTFS") blockers.push("Initial live-write release supports only local NTFS");
   if (evidence.freeBytes === null || evidence.freeBytes < requiredUsableBytes) {
-    blockers.push(`可用空间不足：需要至少 ${(requiredUsableBytes / 1e12).toFixed(2)} TB`);
+    blockers.push(`Insufficient free space: at least ${(requiredUsableBytes / 1e12).toFixed(2)} TB required`);
   }
   if (
     evidence.measuredSustainedWriteBytesPerSecond === null
     || evidence.measuredSustainedWriteBytesPerSecond < requiredSustainedWriteBytesPerSecond
   ) {
     blockers.push(
-      `未证明持续物理写入 ${(requiredSustainedWriteBytesPerSecond / 1e6).toFixed(2)} MB/s 加开销`,
+      `Sustained physical write at ${(requiredSustainedWriteBytesPerSecond / 1e6).toFixed(2)} MB/s plus overhead is unproven`,
     );
   }
-  if (evidence.powerLossProtectionVerified !== true) blockers.push("未验证本地存储 PLP");
+  if (evidence.powerLossProtectionVerified !== true) blockers.push("Local storage PLP is unverified");
   const validHash = (value: string | null) => value !== null
     && /^[0-9a-f]{64}$/.test(value)
     && !/^0+$/.test(value);
-  if (!validHash(evidence.qualificationProfileHash)) blockers.push("缺少存储资格 profile hash");
-  if (!validHash(evidence.qualificationReceiptHash)) blockers.push("缺少存储资格收据 hash");
+  if (!validHash(evidence.qualificationProfileHash)) blockers.push("Storage qualification profile hash is missing");
+  if (!validHash(evidence.qualificationReceiptHash)) blockers.push("Storage qualification receipt hash is missing");
   if (
     evidence.qualificationDurationSeconds === null
     || evidence.qualificationDurationSeconds < RELEASE_DURATION_SECONDS
   ) {
-    blockers.push("目标记录卷尚未通过24小时端到端双写资格测试");
+    blockers.push("The target recording volume has not passed the 24-hour end-to-end dual-write qualification");
   }
 
   return {

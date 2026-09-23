@@ -160,7 +160,7 @@ function unavailableOptionalEvidence(now: number): Pick<RunIntegrityEvidence, "n
     nwb: softwareSlot(
       "nwb",
       "unavailable",
-      "未连接 NWB materializer；原始 journal 可独立封存。",
+      "NWB materializer is not connected; the raw journal can still be sealed independently.",
       null,
       null,
       null,
@@ -169,7 +169,7 @@ function unavailableOptionalEvidence(now: number): Pick<RunIntegrityEvidence, "n
     analysis: softwareSlot(
       "analysis",
       "unavailable",
-      "未连接 Analysis worker；不伪造分析完成或遗漏数量。",
+      "Analysis worker is not connected; analysis completion and omission counts are not fabricated.",
       null,
       null,
       null,
@@ -178,7 +178,7 @@ function unavailableOptionalEvidence(now: number): Pick<RunIntegrityEvidence, "n
     stimReceipt: softwareSlot(
       "stim_receipt",
       "unavailable",
-      "未连接外部刺激/事件回执；不授予刺激能力，也不影响原始 journal 封存。",
+      "External stimulation and event receipts are not connected. No stimulation capability is granted, and raw-journal sealing is unaffected.",
       null,
       null,
       null,
@@ -233,14 +233,14 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
           ...inner.capabilities.mock_acquisition,
           claimScope: "software",
           reasonCode: "INDEPENDENT_SYNTHETIC_JOURNAL",
-          summary: "低速 Preview 来自 mock fixture；Recording 由独立 Rust software daemon 写入真实 create-new journal。",
+          summary: "Low-rate Preview comes from a mock fixture. Recording writes a real create-new journal through an independent Rust software daemon.",
         },
         fault_injection: {
           ...inner.capabilities.fault_injection,
           status: "unavailable",
           claimScope: "software",
           reasonCode: "REAL_JOURNAL_FAULT_INJECTION_DISABLED",
-          summary: "真实 software journal 路径不开放 GUI 故障注入。",
+          summary: "The real software-journal path does not expose GUI fault injection.",
         },
       },
       evidenceHash: inner.evidenceHash,
@@ -258,7 +258,7 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
   }
 
   async execute(intent: AcquireIntent): Promise<CommandReceipt> {
-    if (this.disposed) return this.reject(intent, "ADAPTER_DISPOSED", "Software adapter 已释放");
+    if (this.disposed) return this.reject(intent, "ADAPTER_DISPOSED", "Software adapter has been disposed");
     try {
       switch (intent.type) {
         case "preflight":
@@ -267,16 +267,23 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
           return await this.realThenMock(intent, 2, "armed");
         case "start_recording":
           return await this.realThenMock(intent, 3, "recording");
+        case "pause_recording":
+        case "resume_recording":
+          return this.reject(
+            intent,
+            "RECORDING_PAUSE_UNAVAILABLE",
+            "This daemon protocol does not support reversible recording pause. End Recording remains fail-closed and available.",
+          );
         case "stop_recording":
           return await this.stopAndSeal(intent);
         case "recover_run":
-          return this.reject(intent, "SOFTWARE_RECOVERY_NOT_CONNECTED", "当前 software daemon 不提供 GUI 内恢复；保留 Run 目录并检查 journal。 ");
+          return this.reject(intent, "SOFTWARE_RECOVERY_NOT_CONNECTED", "The current software daemon provides no in-GUI recovery. Keep the Run directory and inspect the journal.");
         case "acknowledge_failed_run": {
           if (this.daemon?.state !== "failed" || this.activeRun === null) {
             return this.reject(
               intent,
               "FAILED_RUN_NOT_CONFIRMED",
-              "只有 daemon snapshot 明确报告 Failed 的 software Run 才能确认关闭；控制连接丢失不能当作记录已停止。",
+              "Only a software Run explicitly reported as Failed by the daemon snapshot can be acknowledged and closed. Loss of control is not proof that recording stopped.",
             );
           }
           const preservedRunDirectory = this.activeRun.reservation.resolvedRunDirectory;
@@ -289,7 +296,7 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
           const receipt = {
             ...this.outerReceipt(
             inner,
-            `失败 Run 已从控制面关闭；partial journal 保留在 ${preservedRunDirectory}，未删除、未补写 seal，也不声称数据完整。`,
+            `The failed Run was closed from the control plane. Its partial journal remains at ${preservedRunDirectory}; no files were deleted, no seal was synthesized, and completeness is not claimed.`,
             ),
             stateAtAcceptance: "recovery_required" as const,
             requestedState: "connected_idle" as const,
@@ -332,7 +339,7 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
     const invalid = this.validatePlan(current, plan);
     if (invalid !== null) return this.reject({ type: "preflight", plan }, "INVALID_PLAN", invalid);
     if (this.activeRun !== null && !["journal_sealed", "finalized", "aborted", "failed"].includes(this.daemon?.state ?? "new")) {
-      return this.reject({ type: "preflight", plan }, "RUN_ALREADY_ACTIVE", "已有 software Run 尚未封存或失败关闭");
+      return this.reject({ type: "preflight", plan }, "RUN_ALREADY_ACTIVE", "A software Run remains unsealed or has not been closed after failure");
     }
 
     const runIdHex = randomHex(16);
@@ -376,30 +383,30 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
       return this.outerReceipt(
         receipt,
         aborted?.accepted && aborted.state === "aborted"
-          ? "内部 Preview plan 在 daemon Prepare 后拒绝；daemon 已 Abort 关闭并完成回执。"
-          : "内部 Preview plan 在 daemon Prepare 后拒绝；Abort 尚未由 daemon 确认。",
+          ? "The internal Preview plan was rejected after daemon Prepare; the daemon confirmed Abort and closure."
+          : "The internal Preview plan was rejected after daemon Prepare; Abort is not yet confirmed by the daemon.",
         false,
       );
     }
     return this.outerReceipt(
       receipt,
-      `Rust daemon 已 create-new 分配 ${this.activeRun.reservation.resolvedRunDirectory} 并创建 run.forgewal；尚未开始写样本。`,
+      `The Rust daemon allocated ${this.activeRun.reservation.resolvedRunDirectory} with create-new semantics and created run.forgewal; sample writing has not started.`,
     );
   }
 
   private validatePlan(snapshot: DaemonSnapshot, plan: RunPlan): string | null {
     if (!["connected_idle", "finalized"].includes(snapshot.lifecycle) || snapshot.previewState !== "live") {
-      return "必须先连接并启动 Preview，且当前不能有 active Run";
+      return "Connect and start Preview first; no active Run may exist.";
     }
     if (!plan.label.trim() || !plan.recordingTarget.requestedDirectory.trim()
       || !plan.recordingTarget.baseName.trim() || plan.recordingTarget.overwritePolicy !== "forbid"
       || plan.recordingTarget.allocationPolicy !== "create_new_incrementing_suffix") {
-      return "记录位置、名称或 NO OVERWRITE 策略无效";
+      return "The recording location, name, or NO OVERWRITE policy is invalid.";
     }
     if (plan.selectedDevices.length < 1 || plan.selectedDevices.length > 8
       || new Set(plan.selectedDevices.map((item) => item.podKey)).size !== plan.selectedDevices.length
       || new Set(plan.selectedDevices.map((item) => item.deviceId)).size !== plan.selectedDevices.length) {
-      return "Run 必须包含 1–8 个唯一设备";
+      return "A Run must contain 1–8 unique devices.";
     }
     const pods = [
       ...snapshot.topology.directPods,
@@ -413,7 +420,7 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
           || pod.identity.identityEvidenceHash !== selection.identityEvidenceHash
           || pod.neuralInput?.evidenceHash !== selection.inputEvidenceHash;
       })) {
-      return "设备身份、输入描述或 topology receipt 已变化";
+      return "A device identity, input description, or topology receipt changed.";
     }
     return null;
   }
@@ -428,8 +435,8 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
       return this.reject(intent, "DAEMON_REJECTED", daemon.reason);
     }
     return this.mockReceipt(intent, command === 2
-      ? "独立 Rust writer 已 Armed；尚未开始记录。"
-      : `独立 Rust writer 正在记录 ${this.activeRun?.selectedDeviceIds.length ?? 0} 个 deterministic software source。`);
+      ? "The independent Rust writer is Armed; recording has not started."
+      : `The independent Rust writer is recording ${this.activeRun?.selectedDeviceIds.length ?? 0} deterministic software sources.`);
   }
 
   private async stopAndSeal(
@@ -437,14 +444,14 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
   ): Promise<CommandReceipt> {
     const daemon = await this.command(4, false);
     if (!daemon.accepted || daemon.state !== "journal_sealed") {
-      return this.reject(intent, "SEAL_NOT_PROVEN", "Stop 返回但 journal seal 尚未由 daemon 证明");
+      return this.reject(intent, "SEAL_NOT_PROVEN", "Stop returned, but the daemon has not proven the journal seal");
     }
     // The per-Run software daemon exits after the sealed Stop response is
     // consumption-acknowledged. Stop polling before the inner UI transition so
     // an expected clean process exit cannot be misclassified as pipe loss.
     this.stopPolling();
     const receipt = await this.mockReceipt(intent,
-      "daemon 已停止输入、排空队列、完成 durability barrier 并封存 run.forgewal；Preview 继续。",
+      "The daemon stopped input, drained queues, completed the durability barrier, and sealed run.forgewal. Preview continues.",
     );
     return receipt;
   }
@@ -610,7 +617,7 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
       failed ? "failed" : durableClosed ? "proven" : daemon?.state === "recording" ? "active"
         : daemon?.state === "stopped" ? "pending" : "idle",
       failed
-        ? `未封存；${recordCounts}. ${failedReason}. Partial journal 必须保留，不能当作完整 Run。`
+        ? `Unsealed; ${recordCounts}. ${failedReason}. The partial journal must be retained and cannot be treated as a complete Run.`
         : durableClosed
           ? `run.forgewal sealed; durable ${durable?.toString()} / committed ${committed?.toString()} records.`
           : daemon?.state === "recording"
@@ -635,6 +642,8 @@ export class SoftwareAcquireAdapter implements AcquireAdapter {
       controlLoadPercent: null,
       inputBytesPerSecond: null,
       expectedBytesPerSecond: null,
+      recordingFileBytes: null,
+      storageFreeBytes: null,
     };
     const recordingTarget = active?.reservation ?? null;
     const runReceipt: RunReceipt | null = active === null || recordingTarget === null ? null : {

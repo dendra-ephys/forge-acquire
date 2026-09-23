@@ -54,9 +54,9 @@ export function SafetyPanel({
         onClick={onRequestArm}
       >
         {canRequestArm ? <LockKeyhole size={17} aria-hidden="true" /> : <ShieldOff size={17} aria-hidden="true" />}
-        请求 Stimulation Arm
+        Request stimulation arm
       </button>
-      <p>按钮请求不能建立 Armed；仅 SafetyArbiter 与匹配硬件 receipt 可以。</p>
+      <p>A button request cannot establish Armed. Only the SafetyArbiter and a matching hardware receipt can.</p>
     </section>
   );
 }

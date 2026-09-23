@@ -153,10 +153,10 @@ export const DEFAULT_SYNTHETIC_HEADSTAGE_PROFILE: HeadstageProfileId = "rhd2132x
 
 export const RECEIVER_POD_REV_A_CONTRACT = {
   fpga: "LFE5UM-25F-8MG285I",
-  usbBridge: "FT601Q-B-T",
+  usbBridge: "FT600Q-B-T",
   fifoMode: "245 synchronous",
-  fifoWidthBits: 32,
-  byteEnableBits: 4,
+  fifoWidthBits: 16,
+  byteEnableBits: 2,
   vccioMillivolts: 2_500,
   fifoClockProfilesHz: { bringup: 66_666_667, release: 100_000_000 },
   cabline: {

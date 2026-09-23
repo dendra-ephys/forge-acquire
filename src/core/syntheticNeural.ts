@@ -1,3 +1,5 @@
+import type { PreviewNeuralModel, PreviewNeuralSample } from "./previewNeuralModel";
+
 /**
  * Integer-only synthetic neural truth shared by the mock Wideband/LFP/Spike views.
  *
@@ -41,7 +43,7 @@ export interface SyntheticNeuralOptions {
   sampleRateHz?: number;
 }
 
-export interface SyntheticNeuralSample {
+export interface SyntheticNeuralSample extends PreviewNeuralSample {
   /** The deterministic 8 Hz triangle component before int16 saturation. */
   lfp: number;
   /** The fixed-template contribution before int16 saturation. */
@@ -104,7 +106,7 @@ function fnv1a64(text: string, lane: number): bigint {
   return hash;
 }
 
-function evidenceHash(text: string): string {
+export function neuralEvidenceHash(text: string): string {
   return Array.from({ length: 4 }, (_, lane) => fnv1a64(text, lane)
     .toString(16)
     .padStart(16, "0"))
@@ -123,7 +125,7 @@ function scenarioEvidenceHash(sampleRateHz: number, seed: bigint): string {
     "spike_first=29+53*channel",
     `spike_template=${SYNTHETIC_SPIKE_TEMPLATE.join(",")}`,
   ].join(";");
-  return evidenceHash(config);
+  return neuralEvidenceHash(config);
 }
 
 function safeCount(value: bigint): number {
@@ -133,11 +135,16 @@ function safeCount(value: bigint): number {
   return Number(value);
 }
 
-export class SyntheticNeuralModel {
+export class SyntheticNeuralModel implements PreviewNeuralModel {
+  readonly sourceKind = "canonical-synthetic" as const;
+  readonly channelCount = null;
   readonly scenarioId = SYNTHETIC_SCENARIO_ID;
   readonly seed: bigint;
   readonly sampleRateHz: number;
   readonly scenarioHash: string;
+  readonly previewMicrovoltsPerCount = SYNTHETIC_PREVIEW_MICROVOLTS_PER_COUNT;
+  readonly waveformPretriggerSamples = SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES;
+  readonly waveformPointCount = SYNTHETIC_SPIKE_TEMPLATE.length;
 
   constructor(options: SyntheticNeuralOptions = {}) {
     const sampleRateHz = options.sampleRateHz ?? SYNTHETIC_SAMPLE_RATE_HZ;
@@ -157,7 +164,7 @@ export class SyntheticNeuralModel {
     if (channelLayoutId.trim().length === 0) {
       throw new RangeError("channelLayoutId cannot be empty");
     }
-    return evidenceHash([
+    return neuralEvidenceHash([
       "forge.synthetic.neural.input-config.v1",
       `scenario=${this.scenarioHash}`,
       `channel_count=${channelCount}`,

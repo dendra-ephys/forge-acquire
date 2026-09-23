@@ -208,6 +208,13 @@ or a locally passing software test into a green hardware capability.
   shape from an electrochem, mixed, or open-graph profile is insufficient to request Arm.
 - Raw samples are prohibited from React/WebView state. The current Canvas path
   is a bounded UI prototype, not the production shared-memory/binary channel.
+- Browser-only Preview now uses a compact 16-channel NWB-derived waveform
+  reconstruction. Its event timing and 32-point snippets bind a real source
+  artifact hash, while the between-event baseline remains synthetic and every
+  frame remains `scope=mock`, `synthetic=true`, and raw-sample-free. This improves
+  demo morphology only; it is not hardware, daemon, detector, journal, NWB
+  publication, or scientific-validity evidence. Protected replay and the Tauri
+  software adapter retain the canonical integer fixture.
 - The existing Tauri `hardware_snapshot` bridge now feeds a dedicated 500-ms,
   serialized, read-only status adapter and compact inspector section. It validates the
   exact response shape, request echo, enums, availability bits, evidence hashes and

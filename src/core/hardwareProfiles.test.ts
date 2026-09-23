@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import inventoryContract from "../../contracts/headstage/firmware/component_inventory_profiles.json";
-import productMatrix from "../../contracts/headstage/docs/headstage_product_matrix_v1.json";
+import inventoryContract from "../../../headstage/firmware/component_inventory_profiles.json";
+import productMatrix from "../../../headstage/docs/headstage_product_matrix_v1.json";
 import {
   HEADSTAGE_PROFILES,
   RECEIVER_POD_REV_A_CONTRACT,
@@ -15,10 +15,10 @@ const ACTIVE_OPTION_GRAPH_CLOSED_FROM_GENERATED_SKIDL_SUMMARIES = {
 } as const;
 
 describe("active Receiver Pod and Headstage contracts", () => {
-  it("models the FT601 32-bit CABLINE Rev A Pod without legacy FT600 values", () => {
-    expect(RECEIVER_POD_REV_A_CONTRACT.usbBridge).toBe("FT601Q-B-T");
-    expect(RECEIVER_POD_REV_A_CONTRACT.fifoWidthBits).toBe(32);
-    expect(RECEIVER_POD_REV_A_CONTRACT.byteEnableBits).toBe(4);
+  it("models the FT600 16-bit Receiver Pod PCB contract", () => {
+    expect(RECEIVER_POD_REV_A_CONTRACT.usbBridge).toBe("FT600Q-B-T");
+    expect(RECEIVER_POD_REV_A_CONTRACT.fifoWidthBits).toBe(16);
+    expect(RECEIVER_POD_REV_A_CONTRACT.byteEnableBits).toBe(2);
     expect(RECEIVER_POD_REV_A_CONTRACT.vccioMillivolts).toBe(2_500);
     expect(RECEIVER_POD_REV_A_CONTRACT.fifoClockProfilesHz).toEqual({
       bringup: 66_666_667,

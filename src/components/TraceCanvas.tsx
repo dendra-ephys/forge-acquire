@@ -8,7 +8,6 @@ import {
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
-  PointerEvent as ReactPointerEvent,
 } from "react";
 import type { Marker, TraceBlock } from "../core/types";
 
@@ -54,11 +53,6 @@ export interface TraceCanvasProps {
   markers?: readonly Marker[];
   /** Overrides the time range inferred from the TraceBlock. */
   timeline?: TraceTimeline;
-  /** Pass an empty string to hide the synthetic-data badge. */
-  syntheticLabel?: string;
-  /** Pass an empty string to hide the display-only badge. */
-  displayOnlyLabel?: string;
-  pausedText?: string;
   emptyText?: string;
   ariaLabel?: string;
   className?: string;
@@ -84,7 +78,7 @@ function makeLayout(
   height: number,
   channelCount: number,
 ): TraceLayout {
-  const headerHeight = height < 420 ? 30 : 36;
+  const headerHeight = 0;
   const footerHeight = 24;
   const labelWidth = clamp(width * 0.105, 64, 92);
   const plotLeft = labelWidth;
@@ -103,54 +97,6 @@ function makeLayout(
     plotWidth: Math.max(1, plotRight - plotLeft),
     laneHeight: Math.max(1, (plotBottom - plotTop) / Math.max(1, channelCount)),
   };
-}
-
-function roundedRect(
-  context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-): void {
-  const r = Math.min(radius, width / 2, height / 2);
-  context.beginPath();
-  context.moveTo(x + r, y);
-  context.lineTo(x + width - r, y);
-  context.quadraticCurveTo(x + width, y, x + width, y + r);
-  context.lineTo(x + width, y + height - r);
-  context.quadraticCurveTo(
-    x + width,
-    y + height,
-    x + width - r,
-    y + height,
-  );
-  context.lineTo(x + r, y + height);
-  context.quadraticCurveTo(x, y + height, x, y + height - r);
-  context.lineTo(x, y + r);
-  context.quadraticCurveTo(x, y, x + r, y);
-  context.closePath();
-}
-
-function drawBadge(
-  context: CanvasRenderingContext2D,
-  text: string,
-  rightEdge: number,
-  background: string,
-  foreground: string,
-): number {
-  const horizontalPadding = 8;
-  const width = Math.ceil(context.measureText(text).width) + horizontalPadding * 2;
-  const height = 20;
-  const x = rightEdge - width;
-  const y = 8;
-
-  roundedRect(context, x, y, width, height, 5);
-  context.fillStyle = background;
-  context.fill();
-  context.fillStyle = foreground;
-  context.fillText(text, x + horizontalPadding, y + 14);
-  return x - 6;
 }
 
 function formatSeconds(seconds: number): string {
@@ -188,7 +134,7 @@ function drawWaveform(
     Math.max(1, laneHeight - 2),
   );
   context.clip();
-  context.strokeStyle = selected ? "#67e8f9" : "rgba(115, 190, 244, 0.82)";
+  context.strokeStyle = selected ? "#f5f5f5" : "rgba(190, 190, 190, 0.82)";
   context.lineWidth = selected ? 1.55 : 1;
   context.lineJoin = "round";
   context.lineCap = "round";
@@ -282,9 +228,6 @@ export function TraceCanvas({
   paused = false,
   markers = [],
   timeline,
-  syntheticLabel = "SYNTHETIC SIGNAL",
-  displayOnlyLabel = "DISPLAY ONLY",
-  pausedText = "VIEW PAUSED",
   emptyText = "No display samples",
   ariaLabel = "Live neural traces",
   className,
@@ -353,56 +296,13 @@ export function TraceCanvas({
       if (!context) return;
       context.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
       context.clearRect(0, 0, size.width, size.height);
-      context.fillStyle = "#09111a";
+      context.fillStyle = "#111111";
       context.fillRect(0, 0, size.width, size.height);
 
       const lanesToDraw = channelCount || MAX_VISIBLE_CHANNELS;
       const layout = makeLayout(size.width, size.height, lanesToDraw);
 
-      context.font = "600 11px ui-sans-serif, system-ui, sans-serif";
-      context.textBaseline = "alphabetic";
-      context.fillStyle = "#9fb2c4";
-      const header = displayedBlock
-        ? `${displayedBlock.podId}  ·  CH ${String(
-            displayedBlock.channelOffset + 1,
-          ).padStart(3, "0")}–${String(
-            displayedBlock.channelOffset + channelCount,
-          ).padStart(3, "0")}  ·  ${formatSeconds(
-            displayedBlock.sampleWindowSeconds,
-          )}  ·  ±${Math.abs(gainValue).toLocaleString()} ${amplitudeUnitLabel}`
-        : "Trace monitor";
-      context.fillText(header, 12, 23);
-
-      let badgeRight = size.width - 12;
-      if (paused && pausedText) {
-        badgeRight = drawBadge(
-          context,
-          pausedText,
-          badgeRight,
-          "rgba(249, 115, 22, 0.18)",
-          "#fdba74",
-        );
-      }
-      if (displayedBlock?.synthetic && syntheticLabel) {
-        badgeRight = drawBadge(
-          context,
-          syntheticLabel,
-          badgeRight,
-          "rgba(168, 85, 247, 0.18)",
-          "#d8b4fe",
-        );
-      }
-      if (displayOnlyLabel) {
-        drawBadge(
-          context,
-          displayOnlyLabel,
-          badgeRight,
-          "rgba(14, 165, 233, 0.16)",
-          "#7dd3fc",
-        );
-      }
-
-      context.fillStyle = "#0c1722";
+      context.fillStyle = "#161616";
       context.fillRect(
         0,
         layout.plotTop,
@@ -417,7 +317,7 @@ export function TraceCanvas({
         const x = layout.plotLeft + (division / 10) * layout.plotWidth;
         context.beginPath();
         context.strokeStyle =
-          division === 0 || division === 10 ? "#293848" : "#172533";
+          division === 0 || division === 10 ? "#383838" : "#242424";
         context.moveTo(x + 0.5, layout.plotTop);
         context.lineTo(x + 0.5, layout.plotBottom);
         context.stroke();
@@ -431,9 +331,9 @@ export function TraceCanvas({
         const selected = channel !== null && channel === selectedChannel;
 
         if (selected) {
-          context.fillStyle = "rgba(34, 211, 238, 0.095)";
+          context.fillStyle = "rgba(255, 255, 255, 0.06)";
           context.fillRect(0, laneTop, size.width, layout.laneHeight);
-          context.fillStyle = "#22d3ee";
+          context.fillStyle = "#d4d4d4";
           context.fillRect(0, laneTop, 3, layout.laneHeight);
         } else if (row % 2 === 1) {
           context.fillStyle = "rgba(255, 255, 255, 0.012)";
@@ -441,13 +341,13 @@ export function TraceCanvas({
         }
 
         context.beginPath();
-        context.strokeStyle = "#1c2b39";
+        context.strokeStyle = "#292929";
         context.moveTo(0, laneTop + layout.laneHeight + 0.5);
         context.lineTo(size.width, laneTop + layout.laneHeight + 0.5);
         context.stroke();
 
         context.beginPath();
-        context.strokeStyle = selected ? "#28596a" : "#20313f";
+        context.strokeStyle = selected ? "#454545" : "#303030";
         context.moveTo(layout.plotLeft, laneTop + layout.laneHeight / 2 + 0.5);
         context.lineTo(layout.plotRight, laneTop + layout.laneHeight / 2 + 0.5);
         context.stroke();
@@ -455,7 +355,7 @@ export function TraceCanvas({
         if (displayedBlock && channel !== null && row < channelCount) {
           const fontSize = clamp(layout.laneHeight * 0.34, 9, 12);
           context.font = `${selected ? 700 : 600} ${fontSize}px ui-monospace, SFMono-Regular, Consolas, monospace`;
-          context.fillStyle = selected ? "#e6fbff" : "#91a6b9";
+          context.fillStyle = selected ? "#f5f5f5" : "#a3a3a3";
           context.fillText(
             `CH ${String(channel + 1).padStart(3, "0")}`,
             10,
@@ -478,7 +378,7 @@ export function TraceCanvas({
       if (!displayedBlock || channelCount === 0) {
         context.font = "500 13px ui-sans-serif, system-ui, sans-serif";
         context.textAlign = "center";
-        context.fillStyle = "#72869a";
+        context.fillStyle = "#8f8f8f";
         context.fillText(
           emptyText,
           layout.plotLeft + layout.plotWidth / 2,
@@ -511,13 +411,13 @@ export function TraceCanvas({
             durationMs;
           const x = layout.plotLeft + clamp(ratio, 0, 1) * layout.plotWidth;
           context.beginPath();
-          context.strokeStyle = "rgba(251, 191, 36, 0.88)";
+          context.strokeStyle = "rgba(224, 224, 224, 0.88)";
           context.lineWidth = 1;
           context.moveTo(x + 0.5, layout.plotTop);
           context.lineTo(x + 0.5, layout.plotBottom);
           context.stroke();
 
-          context.fillStyle = "#fbbf24";
+          context.fillStyle = "#e0e0e0";
           context.beginPath();
           context.moveTo(x, layout.plotTop);
           context.lineTo(x - 4, layout.plotTop + 6);
@@ -535,7 +435,7 @@ export function TraceCanvas({
         context.restore();
 
         context.font = "500 10px ui-monospace, SFMono-Regular, Consolas, monospace";
-        context.fillStyle = "#71869a";
+        context.fillStyle = "#8f8f8f";
         context.fillText(
           `−${formatSeconds(durationMs / 1_000)}`,
           layout.plotLeft,
@@ -557,42 +457,21 @@ export function TraceCanvas({
   }, [
     amplitudeUnitLabel,
     channelCount,
-    displayOnlyLabel,
     displayedBlock,
     emptyText,
     gainValue,
     markers,
     paused,
-    pausedText,
     selectedChannel,
     size,
-    syntheticLabel,
     timeline,
   ]);
 
-  const selectFromPointer = useCallback(
-    (event: ReactPointerEvent<HTMLCanvasElement>) => {
-      if (!displayedBlock || channelCount === 0) return;
-      const canvas = event.currentTarget;
-      canvas.focus();
-      const bounds = canvas.getBoundingClientRect();
-      if (bounds.width <= 0 || bounds.height <= 0) return;
-      const layout = makeLayout(bounds.width, bounds.height, channelCount);
-      const y = event.clientY - bounds.top;
-      if (y < layout.plotTop || y >= layout.plotBottom) return;
-      const row = Math.floor((y - layout.plotTop) / layout.laneHeight);
-      if (row < 0 || row >= channelCount) return;
-      onSelect(displayedBlock.channelOffset + row);
-    },
-    [channelCount, displayedBlock, onSelect],
-  );
-
   const selectFromKeyboard = useCallback(
-    (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
+    (event: ReactKeyboardEvent<HTMLButtonElement>, current: number) => {
       if (!displayedBlock || channelCount === 0) return;
       const first = displayedBlock.channelOffset;
       const last = first + channelCount - 1;
-      const current = clamp(selectedChannel ?? first, first, last);
       let next: number | null = null;
       if (event.key === "ArrowUp") next = Math.max(first, current - 1);
       if (event.key === "ArrowDown") next = Math.min(last, current + 1);
@@ -602,7 +481,7 @@ export function TraceCanvas({
       event.preventDefault();
       onSelect(next);
     },
-    [channelCount, displayedBlock, onSelect, selectedChannel],
+    [channelCount, displayedBlock, onSelect],
   );
 
   const selectedDescription =
@@ -612,18 +491,20 @@ export function TraceCanvas({
   const visibleDescription = displayedBlock && channelCount > 0
     ? `Channels ${displayedBlock.channelOffset + 1} through ${displayedBlock.channelOffset + channelCount} visible`
     : "No channel bank visible";
-
+  const interactionLayout = makeLayout(size.width, size.height, channelCount);
   return (
     <div
       ref={containerRef}
       className={["trace-canvas-shell", className].filter(Boolean).join(" ")}
+      role="application"
+      aria-label={`${ariaLabel}. ${visibleDescription}. ${selectedDescription}`}
       style={{
         width: "100%",
         height: "100%",
         minHeight,
         overflow: "hidden",
         borderRadius: 10,
-        background: "#09111a",
+        background: "#111111",
         ...style,
       }}
       data-paused={paused ? "true" : "false"}
@@ -633,19 +514,47 @@ export function TraceCanvas({
     >
       <canvas
         ref={canvasRef}
-        role="application"
-        aria-label={`${ariaLabel}. ${visibleDescription}. ${selectedDescription}`}
-        tabIndex={0}
-        onPointerDown={selectFromPointer}
-        onKeyDown={selectFromKeyboard}
+        aria-hidden="true"
         style={{
           display: "block",
           width: "100%",
           height: "100%",
-          cursor: channelCount > 0 ? "pointer" : "default",
-          touchAction: "manipulation",
+          pointerEvents: "none",
         }}
       />
+      {displayedBlock && channelCount > 0 ? (
+        <div
+          className="trace-channel-lanes"
+          style={{
+            top: interactionLayout.plotTop,
+            bottom: interactionLayout.footerHeight,
+            gridTemplateRows: `repeat(${channelCount}, minmax(0, 1fr))`,
+          }}
+          role="group"
+          aria-label="Visible channel waveforms"
+        >
+          {Array.from({ length: channelCount }, (_, row) => {
+            const channel = displayedBlock.channelOffset + row;
+            const selected = selectedChannel === channel;
+            return (
+              <button
+                key={channel}
+                type="button"
+                className={`trace-channel-lane${selected ? " is-selected" : ""}`}
+                aria-label={`Select channel ${channel + 1} waveform`}
+                aria-pressed={selected}
+                tabIndex={selected ? 0 : -1}
+                data-testid="trace-channel-lane"
+                data-channel={channel}
+                onClick={() => onSelect(channel)}
+                onKeyDown={(event) => selectFromKeyboard(event, channel)}
+              >
+                <span className="sr-only">Channel {channel + 1} waveform</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }

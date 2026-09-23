@@ -1,0 +1,3365 @@
+/*
+ * Forge Acquire visual system
+ *
+ * Apps SDK UI owns the accessible component primitives and document theme
+ * contract. Forge Acquire deliberately uses the same neutral appearance model
+ * as the ChatGPT desktop client: light or dark surfaces, a monochrome accent,
+ * and no decorative state palette.
+ */
+:root,
+:root[data-theme="light"] {
+  --forge-canvas: oklch(98.2% 0 0);
+  --forge-surface: oklch(100% 0 0);
+  --forge-surface-raised: oklch(100% 0 0);
+  --forge-surface-muted: oklch(96.7% 0 0);
+  --forge-surface-selected: oklch(93.5% 0 0);
+  --forge-ink: oklch(23% 0 0);
+  --forge-ink-strong: oklch(9% 0 0);
+  --forge-ink-secondary: oklch(42% 0 0);
+  --forge-ink-tertiary: oklch(57% 0 0);
+  --forge-border: oklch(91.5% 0 0);
+  --forge-border-strong: oklch(82% 0 0);
+  --forge-accent: oklch(9% 0 0);
+  --forge-accent-hover: oklch(22% 0 0);
+  --forge-accent-soft: oklch(94% 0 0);
+  --forge-accent-contrast: oklch(100% 0 0);
+  --forge-trace: oklch(10.5% 0 0);
+  --forge-trace-raised: oklch(15% 0 0);
+  --forge-trace-border: oklch(27% 0 0);
+  --forge-trace-text: oklch(91% 0 0);
+  --forge-shadow: 0 1px 2px oklch(0% 0 0 / 0.05);
+  --forge-overlay: oklch(0% 0 0 / 0.58);
+  --forge-success: var(--forge-ink-strong);
+  --forge-success-soft: var(--forge-surface-selected);
+  --forge-warning: var(--forge-ink-strong);
+  --forge-warning-soft: var(--forge-surface-selected);
+  --forge-danger: var(--forge-ink-strong);
+  --forge-danger-soft: var(--forge-surface-selected);
+  --forge-storage-alert: #a3122b;
+  --forge-storage-alert-soft: #fff0f3;
+
+  /* Apps SDK UI semantic roles used by its receipt Badge primitive. */
+  --spacing: 0.25rem;
+  --control-gutter-pill-scaling: 1.15;
+  --radius-full: 9999px;
+  --badge-size-sm: 18px;
+  --badge-gutter-sm: 6px;
+  --badge-radius-sm: 5px;
+  --badge-font-size-sm: 10px;
+  --badge-font-weight-sm: 650;
+  --badge-tracking-sm: 0.01em;
+  --badge-icon-font-size-sm: 11px;
+  --badge-indicator-size-sm: 8px;
+  --color-background-secondary-soft-alpha: color-mix(in oklch, var(--forge-ink), transparent 92%);
+  --color-text-secondary-soft: var(--forge-ink-secondary);
+  --color-background-success-soft-alpha: color-mix(in oklch, var(--forge-success), transparent 84%);
+  --color-text-success-soft: var(--forge-success);
+  --color-background-danger-soft-alpha: color-mix(in oklch, var(--forge-danger), transparent 84%);
+  --color-text-danger-soft: var(--forge-danger);
+  --color-background-info-soft-alpha: color-mix(in oklch, var(--forge-accent), transparent 84%);
+  --color-text-info-soft: var(--forge-accent);
+
+  --ink: var(--forge-ink);
+  --ink-strong: var(--forge-ink-strong);
+  --muted: var(--forge-ink-secondary);
+  --faint: var(--forge-ink-tertiary);
+  --line: var(--forge-border);
+  --line-strong: var(--forge-border-strong);
+  --panel: var(--forge-surface);
+  --paper: var(--forge-surface-raised);
+  --recess: var(--forge-surface-muted);
+  --powder: var(--forge-surface);
+  --powder-2: var(--forge-surface-muted);
+  --action: var(--forge-accent);
+  --action-dark: var(--forge-accent-hover);
+  --action-wash: var(--forge-accent-soft);
+  --valid: var(--forge-success);
+  --valid-wash: var(--forge-success-soft);
+  --caution: var(--forge-warning);
+  --caution-wash: var(--forge-warning-soft);
+  --danger: var(--forge-danger);
+  --danger-dark: color-mix(in oklch, var(--forge-danger), black 14%);
+  --danger-wash: var(--forge-danger-soft);
+  --record: var(--forge-danger);
+}
+
+:root[data-theme="dark"] {
+  --forge-canvas: oklch(13.5% 0 0);
+  --forge-surface: oklch(17% 0 0);
+  --forge-surface-raised: oklch(20.5% 0 0);
+  --forge-surface-muted: oklch(23.5% 0 0);
+  --forge-surface-selected: oklch(27.5% 0 0);
+  --forge-ink: oklch(91% 0 0);
+  --forge-ink-strong: oklch(97% 0 0);
+  --forge-ink-secondary: oklch(72% 0 0);
+  --forge-ink-tertiary: oklch(57% 0 0);
+  --forge-border: oklch(27% 0 0);
+  --forge-border-strong: oklch(36% 0 0);
+  --forge-accent: oklch(97% 0 0);
+  --forge-accent-hover: oklch(86% 0 0);
+  --forge-accent-soft: oklch(25% 0 0);
+  --forge-accent-contrast: oklch(7% 0 0);
+  --forge-trace: oklch(8% 0 0);
+  --forge-trace-raised: oklch(12.5% 0 0);
+  --forge-trace-border: oklch(24% 0 0);
+  --forge-trace-text: oklch(91% 0 0);
+  --forge-shadow: 0 1px 2px oklch(0% 0 0 / 0.2);
+  --forge-overlay: oklch(0% 0 0 / 0.76);
+  --forge-success: var(--forge-ink-strong);
+  --forge-success-soft: var(--forge-surface-selected);
+  --forge-warning: var(--forge-ink-strong);
+  --forge-warning-soft: var(--forge-surface-selected);
+  --forge-danger: var(--forge-ink-strong);
+  --forge-danger-soft: var(--forge-surface-selected);
+  --forge-storage-alert: #ff788c;
+  --forge-storage-alert-soft: #3a161e;
+}
+
+html,
+body,
+#root {
+  color: var(--forge-ink);
+  background: var(--forge-canvas);
+}
+
+body {
+  font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  letter-spacing: normal;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--forge-accent), transparent 20%);
+  outline-offset: 2px;
+}
+
+.app-shell {
+  color: var(--forge-ink);
+  background: var(--forge-canvas);
+}
+
+.brand {
+  width: 210px;
+  flex-basis: 210px;
+  gap: 10px;
+  padding: 0 16px;
+  border-right-color: var(--forge-border);
+}
+
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  color: var(--forge-accent);
+  border: 1px solid color-mix(in oklch, var(--forge-accent), transparent 66%);
+  border-radius: 9px;
+  background: var(--forge-accent-soft);
+}
+
+.brand strong {
+  color: var(--forge-ink-strong);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.brand span {
+  margin-top: 2px;
+  color: var(--forge-ink-tertiary);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.adapter-readout {
+  min-width: 224px;
+  padding: 0 14px;
+  border-right-color: var(--forge-border);
+  background: transparent;
+}
+
+.adapter-readout__lamp {
+  width: 8px;
+  height: 8px;
+  border: 0;
+  background: var(--forge-success);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--forge-success), transparent 84%);
+}
+
+.adapter-readout span,
+.header-facts span {
+  color: var(--forge-ink-tertiary);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+}
+
+.adapter-readout strong,
+.header-facts strong {
+  color: var(--forge-ink-strong);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.adapter-readout em {
+  padding: 3px 6px;
+  color: var(--forge-warning);
+  border: 1px solid color-mix(in oklch, var(--forge-warning), transparent 45%);
+  border-radius: 5px;
+  background: var(--forge-warning-soft);
+}
+
+.header-facts {
+  grid-template-columns: repeat(3, minmax(88px, 1fr));
+}
+
+.header-facts > div {
+  padding: 7px 10px;
+  border-right-color: var(--forge-border);
+}
+
+.header-facts svg {
+  color: var(--forge-ink-tertiary);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+}
+
+.theme-toggle {
+  min-width: 74px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: var(--forge-ink-secondary);
+  border: 1px solid var(--forge-border-strong);
+  border-radius: 50%;
+  background: var(--forge-surface-muted);
+}
+
+.theme-toggle:hover {
+  color: var(--forge-accent);
+  border-color: color-mix(in oklch, var(--forge-accent), transparent 38%);
+  background: var(--forge-accent-soft);
+}
+
+.theme-toggle span {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Continuous three-pane instrument workspace. */
+.bench-workspace {
+  --pod-column: 248px;
+  --control-column: 304px;
+  gap: 12px;
+  padding: 12px;
+  background: var(--forge-canvas);
+}
+
+.pod-rack,
+.signal-workbench,
+.run-control,
+.fault-recovery,
+.hardware-status {
+  color: var(--forge-ink);
+  border: 1px solid var(--forge-border);
+  border-radius: 10px;
+  background: var(--forge-surface);
+  box-shadow: var(--forge-shadow);
+}
+
+.signal-workbench,
+.pod-rack {
+  overflow: hidden;
+}
+
+.instrument-section-heading,
+.signal-toolbar,
+.fault-recovery > header,
+.hardware-status > header {
+  color: var(--forge-ink);
+  border-color: var(--forge-border);
+  background: var(--forge-surface);
+}
+
+.instrument-section-heading {
+  min-height: 56px;
+  padding: 10px 12px;
+}
+
+.instrument-section-heading h2,
+.fault-recovery h2,
+.hardware-status h2,
+.signal-title h2 {
+  color: var(--forge-ink-strong);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.instrument-kicker,
+.signal-title p,
+.signal-toolbar span,
+.preview-control-cluster > span {
+  color: var(--forge-ink-tertiary);
+}
+
+.instrument-kicker {
+  display: none;
+}
+
+.panel-collapse-button,
+.rack-count,
+.fault-count,
+.toolbar-bank-nav,
+.preview-pause,
+.signal-focus-button,
+.segmented,
+.signal-view-tabs {
+  color: var(--forge-ink-secondary);
+  border-color: var(--forge-border-strong);
+  border-radius: 8px;
+  background: var(--forge-surface-raised);
+}
+
+.panel-collapse-button:hover:not(:disabled),
+.preview-pause:hover:not(:disabled),
+.signal-focus-button:hover:not(:disabled) {
+  color: var(--forge-accent);
+  border-color: color-mix(in oklch, var(--forge-accent), transparent 35%);
+  background: var(--forge-accent-soft);
+}
+
+.pod-rack--collapsed,
+.topology-root,
+.aggregator-device-row,
+.pod-device-actions {
+  color: var(--forge-ink-secondary);
+  border-color: var(--forge-border);
+  background: var(--forge-surface-muted);
+}
+
+.pod-rack-compact-count,
+.pod-rack-compact-routes,
+.topology-branch,
+.pod-leaf,
+.pod-device-actions,
+.aggregator-device-row .device-rename-button--aggregator {
+  border-color: var(--forge-border);
+}
+
+.pod-rack-compact-count,
+.pod-rack-compact-routes span,
+.topology-root,
+.topology-root small,
+.pod-leaf,
+.pod-leaf__state {
+  color: var(--forge-ink-secondary);
+}
+
+.pod-rack-compact-count strong,
+.topology-root strong,
+.pod-leaf__body strong {
+  color: var(--forge-ink-strong);
+}
+
+.topology-root--aggregator:hover,
+.topology-root--aggregator:focus-visible,
+.pod-leaf:hover,
+.pod-leaf.is-selected {
+  color: var(--forge-ink);
+  border-color: color-mix(in oklch, var(--forge-accent), transparent 55%);
+  background: var(--forge-surface-selected);
+}
+
+.pod-leaf.is-selected {
+  box-shadow: inset 3px 0 0 var(--forge-accent);
+}
+
+.topology-children--aggregator {
+  border-left-color: var(--forge-border-strong);
+}
+
+.device-rename-button {
+  color: var(--forge-ink-secondary);
+  border-radius: 7px;
+}
+
+.device-rename-button:hover,
+.device-rename-button:focus-visible {
+  color: var(--forge-accent);
+  border-color: var(--forge-border-strong);
+  background: var(--forge-surface-raised);
+}
+
+/* The signal stage stays optically dark in both themes, like an instrument display. */
+.signal-toolbar {
+  padding: 10px;
+}
+
+.signal-title p,
+.signal-input-contract {
+  line-height: 1.4;
+}
+
+.signal-state {
+  color: var(--forge-accent);
+  border-color: color-mix(in oklch, var(--forge-accent), transparent 55%);
+  border-radius: 6px;
+  background: var(--forge-accent-soft);
+}
+
+.toolbar-bank-nav button,
+.toolbar-bank-nav div,
+.signal-view-tabs button,
+.segmented button {
+  color: var(--forge-ink-secondary);
+  border-color: var(--forge-border);
+  background: transparent;
+}
+
+.toolbar-bank-nav div strong,
+.signal-view-tabs button.is-active,
+.segmented button.active {
+  color: var(--forge-ink-strong);
+}
+
+.signal-view-tabs button:hover:not(:disabled),
+.signal-view-tabs button.is-active,
+.segmented button:hover:not(:disabled),
+.segmented button.active {
+  background: var(--forge-surface-selected);
+}
+
+.signal-view-tabs button.is-active,
+.segmented button.active {
+  box-shadow: inset 0 -2px 0 var(--forge-accent);
+}
+
+.preview-pause,
+.signal-focus-button {
+  min-height: 44px;
+}
+
+.preview-pause.is-active,
+.signal-focus-button.is-active {
+  color: var(--forge-accent);
+  border-color: var(--forge-accent);
+  background: var(--forge-accent-soft);
+}
+
+.trace-stage,
+.trace-canvas-shell,
+.spike-preview-panel,
+.spike-canvas-shell {
+  color: var(--forge-trace-text);
+  background: var(--forge-trace);
+}
+
+.diagnostic-region,
+.diagnostic-deck {
+  color: var(--forge-ink);
+  background: var(--forge-canvas);
+}
+
+.fault-empty,
+.fault-injector p,
+.snapshot-readout dt,
+.capability-row,
+.snapshot-boundary-copy {
+  color: var(--forge-ink-secondary);
+}
+
+.fault-item {
+  color: var(--forge-danger);
+  border-color: color-mix(in oklch, var(--forge-danger), transparent 50%);
+  background: var(--forge-danger-soft);
+}
+
+.fault-item--warning,
+.recovery-action-unavailable {
+  color: var(--forge-warning);
+  border-color: color-mix(in oklch, var(--forge-warning), transparent 48%);
+  background: var(--forge-warning-soft);
+}
+
+.fault-clear,
+.fault-injector select,
+.snapshot-readout,
+.snapshot-readout > div,
+.capability-row {
+  color: var(--forge-ink);
+  border-color: var(--forge-border);
+  background: var(--forge-surface-raised);
+}
+
+.snapshot-readout dd,
+.capability-row strong {
+  color: var(--forge-ink-strong);
+}
+
+.control-stack {
+  gap: 12px;
+}
+
+.phase-chip {
+  color: var(--forge-ink-secondary);
+  border-color: var(--forge-border-strong);
+  border-radius: 6px;
+  background: var(--forge-surface-muted);
+}
+
+.phase-chip--ready {
+  color: var(--forge-success);
+  border-color: color-mix(in oklch, var(--forge-success), transparent 48%);
+  background: var(--forge-success-soft);
+}
+
+.phase-chip--caution {
+  color: var(--forge-warning);
+  border-color: color-mix(in oklch, var(--forge-warning), transparent 48%);
+  background: var(--forge-warning-soft);
+}
+
+.phase-chip--recording,
+.phase-chip--fault {
+  color: var(--forge-danger);
+  border-color: color-mix(in oklch, var(--forge-danger), transparent 48%);
+  background: var(--forge-danger-soft);
+}
+
+.run-readout {
+  padding: 12px;
+  color: var(--forge-ink);
+  border-color: var(--forge-border);
+  background: var(--forge-surface-muted);
+}
+
+.run-readout__label,
+.run-readout p {
+  color: var(--forge-ink-secondary);
+}
+
+.run-readout strong {
+  color: var(--forge-ink-strong);
+}
+
+.preview-session-card,
+.recording-target-readout,
+.stop-safety-separator {
+  color: var(--forge-ink-secondary);
+  border-color: var(--forge-border);
+  border-radius: 7px;
+  background: var(--forge-surface-muted);
+}
+
+.preview-session-card span,
+.preview-session-card small,
+.recording-target-readout span,
+.recording-target-readout small {
+  color: var(--forge-ink-secondary);
+}
+
+.preview-session-card strong,
+.recording-target-readout strong {
+  color: var(--forge-ink-strong);
+}
+
+.preview-session-card--live {
+  border-left-color: var(--forge-accent);
+  background: var(--forge-accent-soft);
+}
+
+.instrument-button {
+  border-radius: 8px;
+  font-weight: 650;
+  transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
+}
+
+.instrument-button--secondary,
+.instrument-button--preview,
+.instrument-button--stop,
+.instrument-button--acknowledge-failed {
+  color: var(--forge-ink);
+  border-color: var(--forge-border-strong);
+  background: var(--forge-surface-raised);
+}
+
+.instrument-button--secondary:hover:not(:disabled),
+.instrument-button--preview:hover:not(:disabled) {
+  color: var(--forge-accent);
+  border-color: color-mix(in oklch, var(--forge-accent), transparent 35%);
+  background: var(--forge-accent-soft);
+}
+
+.instrument-button--arm {
+  color: var(--forge-accent-contrast);
+  border-color: var(--forge-accent-hover);
+  background: var(--forge-accent);
+}
+
+.instrument-button--record {
+  color: var(--forge-accent-contrast);
+  border-color: color-mix(in oklch, var(--forge-danger), black 16%);
+  background: var(--forge-danger);
+}
+
+.instrument-button--stop,
+.instrument-button--acknowledge-failed {
+  color: var(--forge-danger);
+  border-color: color-mix(in oklch, var(--forge-danger), transparent 38%);
+}
+
+.instrument-button--recover {
+  color: var(--forge-warning);
+  border-color: color-mix(in oklch, var(--forge-warning), transparent 42%);
+  background: var(--forge-warning-soft);
+}
+
+.instrument-button:disabled {
+  color: var(--forge-ink-tertiary);
+  border-color: var(--forge-border);
+  background: var(--forge-surface-muted);
+  opacity: 0.72;
+}
+
+.failed-run-retention-note,
+.stop-safety-separator.is-active,
+.stop-safety-separator.is-failed {
+  color: var(--forge-danger);
+  border-color: color-mix(in oklch, var(--forge-danger), transparent 48%);
+  background: var(--forge-danger-soft);
+}
+
+.stop-safety-separator.is-mock_complete {
+  color: var(--forge-accent);
+  border-color: color-mix(in oklch, var(--forge-accent), transparent 48%);
+  background: var(--forge-accent-soft);
+}
+
+.stop-safety-separator.is-nwb_saved {
+  color: var(--forge-success);
+  border-color: color-mix(in oklch, var(--forge-success), transparent 48%);
+  background: var(--forge-success-soft);
+}
+
+/* Dialogs and setup surfaces share the same semantic light/dark system. */
+.modal-backdrop {
+  background: var(--forge-overlay);
+  backdrop-filter: blur(3px);
+}
+
+.dialog {
+  color: var(--forge-ink);
+  border: 1px solid var(--forge-border-strong);
+  border-radius: 12px;
+  background: var(--forge-surface-raised);
+  box-shadow: 0 18px 55px oklch(0% 0 0 / 0.24);
+}
+
+.dialog-header,
+.dialog-actions {
+  color: var(--forge-ink);
+  border-color: var(--forge-border);
+  background: var(--forge-surface);
+}
+
+.dialog-header h2,
+.dialog-header p,
+.dialog-close {
+  color: var(--forge-ink-secondary);
+}
+
+.dialog-header h2 {
+  color: var(--forge-ink-strong);
+}
+
+.dialog-close {
+  border-color: var(--forge-border);
+  border-radius: 8px;
+  background: var(--forge-surface-raised);
+}
+
+.preflight-operator-summary,
+.preflight-operator-summary > div,
+.preflight-technical-details,
+.recording-device-selection,
+.device-name-dialog__identity,
+.device-name-persistence,
+.recording-reservation,
+.run-directory-current,
+.run-directory-roots,
+.run-directory-children {
+  color: var(--forge-ink);
+  border-color: var(--forge-border);
+  background: var(--forge-surface-muted);
+}
+
+.preflight-operator-summary span,
+.preflight-operator-summary p,
+.preflight-technical-details summary,
+.recording-device-selection > p,
+.device-name-dialog__identity span,
+.device-name-persistence span,
+.device-name-persistence p,
+.recording-field small {
+  color: var(--forge-ink-secondary);
+}
+
+.preflight-operator-summary strong,
+.device-name-dialog__identity code,
+.device-name-dialog__identity strong,
+.device-name-persistence strong,
+.recording-device-selection strong,
+.recording-reservation strong {
+  color: var(--forge-ink-strong);
+}
+
+.recording-field,
+.device-name-field {
+  color: var(--forge-ink);
+}
+
+.recording-field input,
+.device-name-field__input,
+.device-name-field__input input,
+.recording-device-selection label,
+.run-directory-jump input {
+  color: var(--forge-ink-strong);
+  border-color: var(--forge-border-strong);
+  background: var(--forge-surface-raised);
+}
+
+.recording-field input:focus,
+.device-name-field__input:focus-within,
+.run-directory-jump input:focus {
+  border-color: var(--forge-accent);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--forge-accent), transparent 82%);
+}
+
+.device-name-persistence--mock_session,
+.device-name-dialog__blocked,
+.recording-reservation.is-pending {
+  color: var(--forge-warning);
+  border-color: color-mix(in oklch, var(--forge-warning), transparent 48%);
+  background: var(--forge-warning-soft);
+}
+
+.device-name-dialog__error,
+.run-directory-message--error {
+  color: var(--forge-danger);
+  border-color: color-mix(in oklch, var(--forge-danger), transparent 48%);
+  background: var(--forge-danger-soft);
+}
+
+.recording-reservation:not(.is-pending) {
+  color: var(--forge-success);
+  border-color: color-mix(in oklch, var(--forge-success), transparent 48%);
+  background: var(--forge-success-soft);
+}
+
+.preflight-check,
+.run-directory-entry,
+.run-directory-roots button {
+  color: var(--forge-ink-secondary);
+  border-color: var(--forge-border);
+  background: var(--forge-surface-raised);
+}
+
+.run-directory-entry:hover,
+.run-directory-entry:focus-visible,
+.run-directory-roots button:hover,
+.run-directory-roots button.is-current {
+  color: var(--forge-accent);
+  border-color: color-mix(in oklch, var(--forge-accent), transparent 48%);
+  background: var(--forge-accent-soft);
+}
+
+@media (max-width: 1220px) {
+  .bench-workspace {
+    --pod-column: 224px;
+    --control-column: 284px;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .brand {
+    width: 184px;
+    flex-basis: 184px;
+  }
+
+  .adapter-readout {
+    min-width: 204px;
+  }
+
+  .header-actions {
+    padding-right: 8px;
+  }
+
+  .header-facts {
+    grid-template-columns: repeat(2, minmax(88px, 1fr));
+  }
+
+  .header-facts > div:last-child {
+    display: none;
+  }
+
+  .pod-rack .instrument-section-heading {
+    padding: 8px;
+  }
+
+  .pod-rack .instrument-section-heading__actions {
+    gap: 4px;
+  }
+
+  .pod-rack .instrument-section-heading .instrument-kicker {
+    display: none;
+  }
+
+  .pod-rack .instrument-section-heading h2 {
+    margin: 0;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .pod-rack .rack-count {
+    min-width: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * Quiet workspace shell
+ *
+ * ChatGPT's useful lesson is not a particular hex value. It is that content
+ * sits on continuous surfaces and hierarchy comes from spacing, type, and a
+ * few soft controls. The acquisition canvas therefore has one visual object
+ * (the trace) instead of wrapping every region in another card.
+ */
+.brand {
+  width: 190px;
+  flex-basis: 190px;
+  gap: 8px;
+  padding: 0 14px;
+  border-right: 0;
+}
+
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  color: var(--forge-ink-strong);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.brand span {
+  display: none;
+}
+
+.adapter-readout {
+  min-width: 0;
+  max-width: 300px;
+  gap: 8px;
+  padding: 0 8px;
+  border-right: 0;
+}
+
+.adapter-readout__lamp {
+  width: 7px;
+  height: 7px;
+  background: var(--forge-ink-secondary);
+  box-shadow: none;
+}
+
+.adapter-readout span {
+  display: none;
+}
+
+.adapter-readout strong {
+  margin-top: 0;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.adapter-readout em {
+  padding: 0;
+  color: var(--forge-ink-tertiary);
+  border: 0;
+  background: transparent;
+  font-size: 9px;
+}
+
+.header-facts {
+  display: none;
+}
+
+.header-actions {
+  margin-left: auto;
+  gap: 10px;
+  padding: 0 12px;
+}
+
+.theme-toggle {
+  min-width: 44px;
+  width: 44px;
+  min-height: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.theme-toggle:hover {
+  color: var(--forge-ink-strong);
+  border: 0;
+  background: var(--forge-surface-selected);
+}
+
+.theme-toggle span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.bench-workspace {
+  --pod-column: 236px;
+  --control-column: 292px;
+  gap: 0;
+  padding: 0;
+  background: var(--forge-surface);
+}
+
+.pod-rack,
+.signal-workbench,
+.run-control,
+.fault-recovery,
+.hardware-status {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.pod-rack {
+  overflow: visible;
+  border-right: 1px solid var(--forge-border);
+  background: var(--forge-surface-muted);
+}
+
+.signal-workbench {
+  background: var(--forge-surface);
+}
+
+.control-stack,
+.run-control {
+  background: var(--forge-surface-muted);
+}
+
+.run-control {
+  border-left: 1px solid var(--forge-border);
+}
+
+.instrument-section-heading,
+.signal-toolbar,
+.fault-recovery > header,
+.hardware-status > header {
+  border: 0;
+  background: transparent;
+}
+
+.instrument-section-heading {
+  min-height: 48px;
+  padding: 8px 12px;
+}
+
+.rack-count,
+.fault-count,
+.panel-collapse-button {
+  min-width: 30px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.pod-device-row {
+  border: 0;
+  border-bottom: 1px solid var(--forge-border);
+}
+
+.pod-device-row .pod-leaf,
+.topology-root,
+.aggregator-device-row {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.pod-device-row .pod-leaf {
+  min-height: 64px;
+  grid-template-rows: auto auto;
+}
+
+.pod-device-row .pod-leaf.is-selected {
+  background: var(--forge-surface-selected);
+  box-shadow: none;
+}
+
+.pod-device-actions {
+  padding: 4px;
+  border-left: 0;
+  background: transparent;
+}
+
+.device-rename-button {
+  width: 34px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+}
+
+.device-rename-button:hover {
+  color: var(--forge-ink-strong);
+  border: 0;
+  background: var(--forge-surface-selected);
+}
+
+.signal-toolbar {
+  padding: 10px 12px 8px;
+}
+
+.toolbar-bank-nav,
+.preview-pause,
+.signal-focus-button,
+.segmented,
+.signal-view-tabs {
+  border: 0;
+  border-radius: 10px;
+  background: var(--forge-surface-muted);
+}
+
+.toolbar-bank-nav button,
+.toolbar-bank-nav div,
+.signal-view-tabs button,
+.segmented button {
+  border: 0;
+}
+
+.signal-view-tabs button.is-active,
+.segmented button.active {
+  border-radius: 8px;
+  background: var(--forge-surface-raised);
+  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.08);
+}
+
+.preview-pause,
+.signal-focus-button {
+  min-height: 36px;
+}
+
+.trace-stage {
+  margin: 0 10px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.spike-event-summary > div,
+.spike-navigation__group {
+  border: 0;
+}
+
+.diagnostic-region,
+.diagnostic-deck {
+  background: var(--forge-surface);
+}
+
+.diagnostic-deck {
+  gap: 0;
+  padding: 0 10px 10px;
+}
+
+.fault-recovery,
+.hardware-status {
+  border-top: 1px solid var(--forge-border);
+  background: transparent;
+}
+
+.fault-item,
+.fault-item--warning,
+.recovery-action-unavailable {
+  border: 0;
+  border-radius: 8px;
+  background: var(--forge-surface-selected);
+}
+
+.phase-chip {
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--forge-surface-selected);
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.run-readout {
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+}
+
+.preview-session-card,
+.recording-target-readout,
+.stop-safety-separator,
+.failed-run-retention-note {
+  border: 0;
+  border-radius: 10px;
+  background: var(--forge-surface-selected);
+}
+
+.instrument-button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 10px;
+}
+
+.instrument-button--secondary,
+.instrument-button--preview,
+.instrument-button--stop,
+.instrument-button--acknowledge-failed,
+.instrument-button--recover {
+  border: 0;
+  background: transparent;
+}
+
+.instrument-button--secondary:hover:not(:disabled),
+.instrument-button--preview:hover:not(:disabled),
+.instrument-button--stop:hover:not(:disabled),
+.instrument-button--acknowledge-failed:hover:not(:disabled),
+.instrument-button--recover:hover:not(:disabled) {
+  color: var(--forge-ink-strong);
+  background: var(--forge-surface-selected);
+}
+
+.instrument-button--arm,
+.instrument-button--record {
+  border: 0;
+  color: var(--forge-accent-contrast);
+  background: var(--forge-accent);
+}
+
+.dialog {
+  border: 0;
+  border-radius: 16px;
+  box-shadow: 0 12px 36px oklch(0% 0 0 / 0.2);
+}
+
+.signal-title__heading,
+.preview-session-card__heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.signal-title__heading h2,
+.preview-session-card__heading strong {
+  min-width: 0;
+  display: inline;
+}
+
+.run-readout__label {
+  display: none;
+}
+
+.info-hint {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.info-hint__trigger {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  color: var(--forge-ink-tertiary);
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: help;
+}
+
+.info-hint__trigger:hover,
+.info-hint__trigger:focus-visible {
+  color: var(--forge-ink-strong);
+  background: var(--forge-surface-selected);
+}
+
+.global-tooltip,
+.info-hint__popover {
+  position: fixed;
+  z-index: 2147483000;
+  color: var(--forge-ink-secondary);
+  border: 1px solid var(--forge-border);
+  background: var(--forge-surface-raised);
+  box-shadow: 0 8px 24px oklch(0% 0 0 / 0.16);
+  pointer-events: none;
+}
+
+.global-tooltip {
+  max-width: min(260px, calc(100vw - 16px));
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: pre-line;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.info-hint__popover {
+  width: max-content;
+  max-width: min(280px, calc(100vw - 16px));
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.info-hint__popover strong,
+.info-hint__popover span {
+  display: block;
+}
+
+.info-hint__popover strong {
+  color: var(--forge-ink-strong);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.visually-hidden {
+  width: 1px !important;
+  height: 1px !important;
+  position: absolute !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.icon-action {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 44px;
+  place-items: center;
+  gap: 0;
+  padding: 0;
+  line-height: 0;
+}
+
+.icon-action > svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.signal-focus-button.icon-action,
+.preview-pause.icon-action,
+.instrument-button--preview.icon-action,
+.instrument-button--recording-mode.icon-action {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+
+.preview-session-card .instrument-button--preview.icon-action {
+  justify-self: end;
+}
+
+.recording-mode-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-content: stretch;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The trace is the one strong surface; every mark inside it stays grayscale. */
+.signal-view-tabs em {
+  color: color-mix(in oklch, var(--forge-trace-text), transparent 38%);
+}
+
+.trace-empty,
+.spike-preview-panel {
+  color: var(--forge-trace-text);
+  border-color: var(--forge-trace-border);
+  background: var(--forge-trace);
+}
+
+/* Slim desktop density: wide controls, low vertical footprint, capsule geometry. */
+.brand {
+  width: 172px;
+  flex-basis: 172px;
+  padding: 0 10px;
+}
+
+.brand-mark {
+  width: 24px;
+  height: 24px;
+}
+
+.adapter-readout {
+  height: 26px;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--forge-surface-muted);
+}
+
+.adapter-readout__lamp {
+  width: 5px;
+  height: 5px;
+}
+
+.header-actions {
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.header-actions .info-hint__trigger,
+.theme-toggle {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  border-radius: 999px;
+}
+
+.bench-workspace {
+  --pod-column: 220px;
+  --control-column: 276px;
+}
+
+.instrument-section-heading {
+  min-height: 40px;
+  padding: 4px 8px;
+}
+
+.instrument-section-heading h2,
+.instrument-section-heading__actions,
+.phase-chip,
+.run-readout,
+.instrument-button,
+.stop-safety-separator {
+  line-height: 1;
+}
+
+.instrument-section-heading h2 {
+  margin: 0;
+}
+
+.phase-chip {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.instrument-section-heading__actions {
+  gap: 3px;
+}
+
+.instrument-section-heading .info-hint__trigger,
+.signal-title__heading .info-hint__trigger,
+.preview-session-card .info-hint__trigger,
+.stop-safety-separator .info-hint__trigger {
+  width: 24px;
+  height: 24px;
+}
+
+.rack-count,
+.fault-count,
+.panel-collapse-button {
+  min-width: 28px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 999px;
+}
+
+.pod-device-row .pod-leaf {
+  min-height: 52px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  border-radius: 12px;
+}
+
+.pod-device-actions {
+  padding: 2px;
+}
+
+.device-rename-button {
+  width: 30px;
+  min-height: 30px;
+  border-radius: 999px;
+}
+
+.topology-root {
+  min-height: 36px;
+  border-radius: 999px;
+}
+
+.signal-toolbar {
+  gap: 4px;
+  padding: 5px 8px;
+}
+
+.signal-toolbar__primary,
+.signal-toolbar__controls {
+  gap: 6px;
+}
+
+.signal-title h2 {
+  margin-top: 0;
+  font-size: 11px;
+}
+
+.signal-title > p:not(.signal-input-contract) {
+  display: none;
+}
+
+.signal-title .signal-input-contract {
+  margin-top: 1px;
+}
+
+.signal-state {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--forge-surface-muted);
+}
+
+.preview-control-cluster > span,
+.signal-view-tabs span,
+.signal-view-tabs em {
+  display: none;
+}
+
+.signal-view-tabs,
+.segmented {
+  min-height: 38px;
+  height: 38px;
+  padding: 1px;
+  border-radius: 999px;
+}
+
+.signal-view-tabs button,
+.segmented button {
+  min-height: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 999px;
+}
+
+.signal-view-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.signal-view-tabs button.is-active,
+.segmented button.active {
+  border-radius: 999px;
+}
+
+.toolbar-bank-nav {
+  min-width: 150px;
+  height: 38px;
+  grid-template-columns: 36px minmax(76px, 1fr) 36px;
+  border-radius: 999px;
+}
+
+.toolbar-bank-nav button,
+.toolbar-bank-nav div {
+  width: auto;
+  height: 36px;
+}
+
+.icon-action,
+.signal-focus-button.icon-action,
+.preview-pause.icon-action,
+.instrument-button--preview.icon-action,
+.instrument-button--recording-mode.icon-action {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  flex-basis: 36px;
+  border-radius: 999px;
+}
+
+.trace-stage {
+  margin: 0 8px;
+  border-radius: 10px;
+}
+
+.run-readout {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 5px 10px;
+}
+
+.run-readout strong {
+  margin-top: 0;
+  font-size: 12px;
+}
+
+.preview-session-card {
+  min-height: 40px;
+  margin: 0 7px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+}
+
+.preview-session-card > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  line-height: 1;
+}
+
+.preview-session-card > div > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.preview-session-card .preview-session-card__heading {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;
+}
+
+.preview-session-card .preview-session-card__heading strong {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0;
+  line-height: 1;
+}
+
+.run-actions {
+  gap: 4px;
+  padding: 6px;
+}
+
+.run-actions > .instrument-button--record,
+.run-actions > .instrument-button--stop {
+  min-height: 32px;
+  height: 32px;
+  padding-inline: 12px;
+}
+
+.recording-mode-actions .instrument-button--recording-mode {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+}
+
+.instrument-button {
+  min-height: 36px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-radius: 999px;
+}
+
+.recording-target-readout {
+  min-height: 36px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.recording-target-readout strong {
+  margin-top: 0;
+}
+
+.recording-target-readout small {
+  display: none;
+}
+
+.stop-safety-separator {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  border-radius: 999px;
+}
+
+.failed-run-retention-note,
+.recovery-action-unavailable,
+.fault-item,
+.fault-item--warning {
+  border-radius: 12px;
+}
+
+.dialog {
+  width: min(980px, 100%);
+  border-radius: 20px;
+}
+
+.dialog-header {
+  padding: 11px 16px 9px;
+}
+
+.dialog-header h2 {
+  margin-top: 1px;
+  font-size: 18px;
+}
+
+.dialog-header p {
+  margin-top: 2px;
+}
+
+.dialog-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+}
+
+.dialog-body {
+  padding: 10px 16px;
+}
+
+.preflight-operator-summary {
+  margin-top: 6px;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.preflight-operator-summary > div {
+  min-height: 56px;
+  padding: 7px 10px;
+}
+
+.preflight-operator-summary strong {
+  margin-top: 2px;
+}
+
+.preflight-operator-summary small {
+  margin-top: 2px;
+}
+
+.arm-boundary-callout {
+  min-height: 38px;
+  align-items: center;
+  margin-top: 8px;
+  padding: 5px 10px;
+  border-left-width: 1px;
+  border-radius: 999px;
+}
+
+.arm-boundary-callout span {
+  display: none;
+}
+
+.preflight-technical-details {
+  margin-top: 8px;
+  border-radius: 999px;
+}
+
+.preflight-technical-details > summary {
+  min-height: 38px;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.dialog-actions {
+  padding: 8px 12px;
+}
+
+.spike-contract-error {
+  color: var(--forge-trace-text);
+  border-color: var(--forge-trace-text);
+  background: var(--forge-trace-raised);
+}
+
+.preflight-operator-summary,
+.preflight-operator-summary > div,
+.preflight-technical-details,
+.recording-device-selection,
+.device-name-dialog__identity,
+.device-name-persistence,
+.recording-reservation,
+.run-directory-current,
+.run-directory-roots,
+.run-directory-children,
+.run-directory-entry,
+.run-directory-roots button {
+  border-color: var(--forge-border);
+  border-radius: 8px;
+}
+
+@media (max-width: 1220px) {
+  .bench-workspace {
+    --pod-column: 216px;
+    --control-column: 276px;
+    gap: 0;
+    padding: 0;
+  }
+
+  .brand {
+    width: 176px;
+    flex-basis: 176px;
+  }
+
+  .adapter-readout {
+    min-width: 0;
+  }
+
+}
+
+.preflight-operator-summary {
+  border-radius: 14px;
+}
+
+.preflight-technical-details,
+.preflight-technical-details > summary {
+  border-radius: 999px;
+}
+
+.recording-setup-grid {
+  grid-template-columns: minmax(0, 2fr) minmax(150px, 0.9fr) 108px;
+  gap: 8px;
+}
+
+.recording-field--wide {
+  grid-column: auto;
+}
+
+.recording-field {
+  gap: 3px;
+}
+
+.recording-field input {
+  height: 36px;
+  border-radius: 999px;
+}
+
+.recording-field small {
+  display: none;
+}
+
+.recording-directory-control .instrument-button {
+  min-height: 36px;
+  border-radius: 999px;
+}
+
+.recording-device-selection {
+  margin-top: 8px;
+  padding: 5px 8px 7px;
+  border-radius: 14px;
+}
+
+.recording-device-selection > p {
+  display: none;
+}
+
+.recording-device-selection > div {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.recording-device-selection label {
+  min-height: 36px;
+  padding: 3px 7px;
+  border-radius: 999px;
+}
+
+@media (max-width: 760px) {
+  .recording-setup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .recording-device-selection > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.app-shell {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.pod-rack {
+  grid-template-rows: 38px auto minmax(0, 1fr) 48px;
+}
+
+.pod-rack--collapsed {
+  grid-template-rows: 38px auto auto auto minmax(0, 1fr) 48px;
+}
+
+/* The product brand belongs to the Devices rail; the global lifecycle marquee is gone. */
+.app-shell {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.pod-rack {
+  grid-template-rows: 38px auto minmax(0, 1fr);
+}
+
+.pod-rack--collapsed {
+  grid-template-rows: 38px auto auto auto minmax(0, 1fr);
+}
+
+.pod-rack-brand {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  color: var(--forge-ink-strong);
+  border-bottom: 1px solid var(--forge-border);
+  background: var(--forge-surface);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pod-rack-brand--collapsed {
+  justify-content: center;
+  padding: 0;
+}
+
+.forge-wave-mark {
+  width: 20px;
+  height: 20px;
+  color: var(--forge-accent);
+}
+
+.signal-toolbar__primary {
+  align-items: flex-start;
+}
+
+.signal-title {
+  display: grid;
+  justify-items: center;
+}
+
+.signal-title__heading {
+  width: min(36ch, 100%);
+  position: relative;
+  justify-content: center;
+}
+
+.signal-device-name {
+  width: 28ch;
+  max-width: calc(100% - 30px);
+  min-width: 0;
+}
+
+.signal-device-name h2 {
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-title__heading > .info-hint {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.signal-title .signal-input-contract {
+  width: 100%;
+  text-align: center;
+}
+
+.signal-title > .signal-view-tabs {
+  width: max-content;
+  max-width: 100%;
+  justify-self: center;
+}
+
+/* Operator-control pass: actions are verbs; status surfaces do not imitate buttons. */
+.run-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "modes modes"
+    "target target"
+    "record record"
+    "pause stop"
+    "boundary boundary";
+}
+
+.run-actions > .instrument-button--record {
+  grid-area: record;
+  min-height: 38px;
+}
+
+.run-actions > .instrument-button--pause {
+  grid-area: pause;
+  min-height: 36px;
+}
+
+.run-actions > .instrument-button--stop {
+  grid-area: stop;
+  min-height: 36px;
+}
+
+.instrument-button--pause {
+  border: 1px solid var(--forge-border);
+  color: var(--forge-ink-strong);
+  background: var(--forge-surface-raised);
+}
+
+.instrument-button--pause.is-active {
+  color: var(--forge-warning);
+  border-color: color-mix(in oklch, var(--forge-warning), transparent 35%);
+  background: var(--forge-warning-soft);
+}
+
+.instrument-button--pause:disabled {
+  color: var(--forge-ink-tertiary);
+  border-color: var(--forge-border-strong);
+  background: var(--forge-surface-raised);
+  opacity: 1;
+}
+
+.run-control__device-status {
+  margin-top: auto;
+  padding-top: 2px;
+}
+
+.run-control__device-status .integrity-rail {
+  min-height: 132px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-areas:
+    "icon kicker"
+    "icon result"
+    "device device"
+    "storage storage"
+    "detail detail";
+  align-items: center;
+  gap: 3px 8px;
+  margin: 2px 7px 8px;
+  padding: 10px;
+  border: 1px solid var(--forge-border);
+  border-left: 4px solid var(--forge-border-strong);
+  border-radius: 8px;
+  color: var(--forge-ink-secondary);
+  background: var(--forge-surface-muted);
+  box-shadow: none;
+}
+
+.run-control__device-status .integrity-rail > svg {
+  grid-area: icon;
+}
+
+.run-control__device-status .integrity-rail__kicker {
+  grid-area: kicker;
+}
+
+.run-control__device-status .integrity-rail > strong {
+  grid-area: result;
+  color: var(--forge-ink-strong);
+}
+
+.integrity-rail__device {
+  grid-area: device;
+  min-width: 0;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--forge-ink-strong);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.integrity-rail__storage {
+  grid-area: storage;
+  display: grid;
+  gap: 3px;
+  margin: 4px 0 0;
+}
+
+.integrity-rail__storage > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.integrity-rail__storage dt,
+.integrity-rail__storage dd {
+  min-width: 0;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.integrity-rail__storage dt {
+  color: var(--forge-ink-tertiary);
+  letter-spacing: 0.08em;
+}
+
+.integrity-rail__storage dd {
+  overflow: hidden;
+  color: var(--forge-ink-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-control__device-status .integrity-rail__detail {
+  grid-area: detail;
+  margin-top: 4px;
+  color: var(--forge-ink-tertiary);
+  font-size: 9px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-control__device-status .integrity-rail--recording {
+  color: var(--forge-accent);
+  border-left-color: var(--forge-accent);
+  background: var(--forge-accent-soft);
+}
+
+.run-control__device-status .integrity-rail[data-storage-low="true"] {
+  color: var(--forge-storage-alert);
+  border-color: color-mix(in oklch, var(--forge-storage-alert), transparent 35%);
+  border-left-color: var(--forge-storage-alert);
+  background: var(--forge-storage-alert-soft);
+}
+
+.pod-device-row .pod-leaf.has-storage-warning,
+.pod-device-row .pod-leaf.has-storage-warning:hover,
+.pod-device-row .pod-leaf.has-storage-warning.is-selected {
+  color: var(--forge-storage-alert);
+  border-color: color-mix(in oklch, var(--forge-storage-alert), transparent 35%);
+  background: var(--forge-storage-alert-soft);
+  box-shadow: inset 3px 0 0 var(--forge-storage-alert);
+}
+
+/* ChatGPT/Codex-style device navigator: groups own rows; Pods are flat child threads. */
+.pod-topology {
+  padding: 6px;
+}
+
+.topology-branch {
+  margin: 0 0 3px;
+  border: 0;
+}
+
+.topology-root,
+.aggregator-device-row .topology-root--aggregator {
+  min-height: 34px;
+  grid-template-columns: 14px 16px minmax(0, 1fr) auto;
+  grid-template-rows: 1fr;
+  gap: 6px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.topology-root:hover,
+.topology-root:focus-visible {
+  background: var(--forge-surface-selected);
+}
+
+.topology-root > span {
+  display: block;
+  min-width: 0;
+}
+
+.topology-root strong {
+  font-size: 11px;
+  font-weight: 560;
+}
+
+.topology-root small {
+  display: inline;
+  margin: 0;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.topology-root__chevron {
+  width: 13px;
+  height: 13px;
+}
+
+.aggregator-device-row {
+  position: relative;
+  display: block;
+  border: 0;
+  background: transparent;
+}
+
+.aggregator-device-row .device-rename-button--aggregator {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  width: 26px;
+  min-height: 26px;
+  margin: 0;
+  opacity: 0;
+}
+
+.aggregator-device-row:hover .device-rename-button--aggregator,
+.aggregator-device-row:focus-within .device-rename-button--aggregator {
+  opacity: 1;
+}
+
+.aggregator-device-row:hover .topology-root small,
+.aggregator-device-row:focus-within .topology-root small {
+  visibility: hidden;
+}
+
+.topology-children,
+.topology-children--aggregator {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pod-device-row {
+  position: relative;
+  width: calc(100% - 20px);
+  display: block;
+  margin: 1px 0 1px 20px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.pod-device-row .pod-leaf {
+  width: 100%;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  grid-template-rows: 1fr;
+  gap: 6px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.pod-device-row .pod-leaf:hover,
+.pod-device-row .pod-leaf:focus-visible,
+.pod-device-row .pod-leaf.is-selected {
+  background: var(--forge-surface-selected);
+  box-shadow: none;
+}
+
+.pod-leaf__body,
+.pod-leaf__state {
+  grid-column: auto;
+}
+
+.pod-leaf__body strong {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.pod-leaf__state {
+  width: 16px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+}
+
+.pod-leaf__state > span[aria-hidden="true"] {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.pod-leaf__state--online,
+.pod-leaf__state--warning {
+  color: var(--forge-ink-tertiary);
+}
+
+.pod-leaf__state--fault {
+  color: var(--forge-danger);
+}
+
+.pod-device-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 3;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--forge-surface-selected);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.pod-device-row:hover .pod-device-actions,
+.pod-device-row:focus-within .pod-device-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.device-rename-button {
+  width: 26px;
+  min-height: 26px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+}
+
+.device-rename-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.instrument-section-heading__title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.instrument-section-heading__title-row .info-hint__trigger {
+  width: 24px;
+  height: 24px;
+}
+
+.pod-device-row .pod-leaf {
+  align-items: center;
+  padding-right: 38px;
+}
+
+.pod-leaf__body {
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.pod-leaf__body strong {
+  line-height: 1.2;
+}
+
+.pod-leaf__state {
+  align-self: center;
+}
+
+.pod-device-actions {
+  top: 50%;
+  height: 28px;
+  transform: translateY(-50%);
+}
+
+.device-rename-button {
+  height: 24px;
+  min-height: 24px;
+}
+
+.preview-session-card,
+.preview-session-card--live,
+.preview-session-card--stopped {
+  min-height: 36px;
+  margin: 0 7px;
+  padding: 0 2px 0 8px;
+  border: 1px solid var(--forge-border);
+  border-radius: 999px;
+  background: var(--forge-surface-raised);
+  box-shadow: var(--forge-shadow);
+}
+
+.preview-session-card .preview-session-card__heading strong {
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--forge-border);
+  border-radius: 999px;
+  background: var(--forge-surface-selected);
+}
+
+.instrument-button--secondary,
+.instrument-button--preview,
+.instrument-button--stop,
+.instrument-button--acknowledge-failed,
+.instrument-button--recover,
+.instrument-button--recording-mode {
+  border: 1px solid var(--forge-border);
+  background: var(--forge-surface-raised);
+}
+
+.instrument-button--record {
+  border: 1px solid var(--forge-border-strong);
+  color: var(--forge-ink-strong);
+  background: var(--forge-surface-raised);
+}
+
+.instrument-button--record:disabled,
+.instrument-button--stop:disabled,
+.instrument-button--recording-mode:disabled {
+  border-color: var(--forge-border-strong);
+  color: var(--forge-ink-tertiary);
+  background: var(--forge-surface-raised);
+  opacity: 1;
+}
+
+.run-control > .instrument-section-heading {
+  position: relative;
+  margin-bottom: 7px;
+}
+
+.run-control > .instrument-section-heading::after {
+  content: "";
+  height: 4px;
+  position: absolute;
+  right: 8px;
+  bottom: -5px;
+  left: 8px;
+  border-radius: 999px;
+  background: var(--forge-surface-selected);
+}
+
+.signal-toolbar {
+  padding: 4px 8px;
+}
+
+.signal-view-tabs,
+.segmented,
+.toolbar-bank-nav {
+  min-height: 30px;
+  height: 30px;
+}
+
+.signal-view-tabs {
+  flex: 0 1 auto;
+}
+
+.signal-view-tabs button,
+.segmented button {
+  min-width: 52px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 8px;
+}
+
+.signal-view-tabs button:disabled {
+  color: var(--forge-ink-tertiary);
+  opacity: 0.55;
+}
+
+.toolbar-bank-nav {
+  min-width: 128px;
+  grid-template-columns: 28px minmax(68px, 1fr) 28px;
+}
+
+.toolbar-bank-nav button,
+.toolbar-bank-nav div {
+  height: 28px;
+}
+
+.icon-action,
+.signal-focus-button.icon-action,
+.preview-pause.icon-action,
+.diagnostic-toggle.icon-action {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  flex-basis: 32px;
+}
+
+.theme-toggle.icon-action,
+.instrument-button--preview.icon-action,
+.instrument-button--recording-mode.icon-action {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  flex-basis: 36px;
+}
+
+.diagnostic-toggle {
+  color: var(--forge-ink-secondary);
+  border: 0;
+  background: var(--forge-surface-muted);
+}
+
+.diagnostic-toggle.has-fault {
+  color: var(--forge-danger);
+}
+
+.signal-workbench--diagnostics-collapsed,
+.signal-workbench--spike.signal-workbench--diagnostics-collapsed {
+  grid-template-rows: minmax(200px, 1fr);
+}
+
+.diagnostic-region {
+  grid-template-rows: minmax(0, 1fr);
+  border-top: 1px solid var(--forge-border);
+}
+
+@media (max-width: 1160px) {
+  .signal-view-tabs button {
+    min-width: 46px;
+    padding-inline: 6px;
+  }
+}
+
+/* Browser review pass: panes never scroll sideways. */
+.app-shell {
+  grid-template-rows: 48px minmax(0, 1fr);
+}
+
+.bench-workspace {
+  position: relative;
+  grid-template-columns: var(--pod-column) minmax(0, 1fr) var(--control-column);
+  overflow: hidden;
+}
+
+.pod-column-resizer {
+  width: 8px;
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--pod-column) - 4px);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.pod-column-resizer::after {
+  content: "";
+  width: 1px;
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  background: var(--forge-border);
+}
+
+.pod-column-resizer:hover::after,
+.pod-column-resizer:focus-visible::after {
+  width: 2px;
+  background: var(--forge-ink-tertiary);
+}
+
+.pod-rack,
+.pod-topology,
+.control-stack,
+.run-control {
+  min-width: 0;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+.pod-topology,
+.run-control {
+  overflow-y: auto;
+}
+
+.pod-topology::-webkit-scrollbar,
+.run-control::-webkit-scrollbar,
+.control-stack::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.pod-leaf__state {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.pod-device-row:hover .pod-leaf__state,
+.pod-device-row:focus-within .pod-leaf__state,
+.pod-device-row:hover .pod-device-actions,
+.pod-device-row:focus-within .pod-device-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (max-width: 1080px) {
+  .bench-header {
+    grid-template-columns: 142px minmax(390px, 1fr) 76px;
+  }
+
+  .bench-header .run-spine {
+    grid-template-columns: minmax(220px, 1fr) 116px;
+  }
+}
+
+/* The signal toolbar is the shared upper edge for Preview and Acquisition. */
+.bench-workspace {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.bench-workspace.is-controls-collapsed {
+  --control-column: 0px;
+}
+
+.pod-rack {
+  grid-column: 1;
+  grid-row: 1 / -1;
+}
+
+.workspace-signal-toolbar {
+  z-index: 22;
+  grid-column: 2 / 4;
+  grid-row: 1;
+  border-bottom: 1px solid var(--forge-border);
+  background: var(--forge-surface);
+}
+
+.signal-workbench {
+  grid-column: 2;
+  grid-row: 2;
+  grid-template-rows: minmax(150px, 1fr) 164px;
+  border-top: 0;
+}
+
+.signal-workbench--spike {
+  grid-template-rows: minmax(230px, 1fr) 124px;
+}
+
+.signal-workbench--diagnostics-collapsed,
+.signal-workbench--spike.signal-workbench--diagnostics-collapsed {
+  grid-template-rows: minmax(200px, 1fr);
+}
+
+.control-stack {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.control-stack--collapsed {
+  display: none;
+}
+
+.acquisition-sidebar-toggle {
+  margin-left: 2px;
+  border-left: 1px solid var(--forge-border);
+  border-radius: 0;
+}
+
+/* Focus mode stays roomy: three control groups, never one compressed run. */
+.signal-toolbar__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  column-gap: 8px;
+}
+
+.signal-view-tabs + .preview-control-cluster {
+  margin-left: 0;
+}
+
+.signal-toolbar__controls > .signal-view-tabs {
+  width: max-content;
+  justify-self: start;
+}
+
+.preview-control-cluster {
+  min-width: 0;
+  justify-self: end;
+}
+
+.trace-empty {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 22px;
+  padding: 10px 12px 4px;
+  background-color: var(--forge-trace);
+  background-image:
+    linear-gradient(to right, color-mix(in oklch, var(--forge-trace-text), transparent 97%) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--forge-trace-text), transparent 97%) 1px, transparent 1px);
+  background-size: 64px 100%, 100% 52px;
+}
+
+.trace-empty__lanes {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: repeat(8, minmax(26px, 1fr));
+  overflow: hidden;
+}
+
+.trace-empty__lane {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  color: color-mix(in oklch, var(--forge-trace-text), transparent 48%);
+  border-bottom: 1px solid color-mix(in oklch, var(--forge-trace-text), transparent 90%);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.trace-empty__lane i {
+  height: 1px;
+  display: block;
+  background: color-mix(in oklch, var(--forge-trace-text), transparent 76%);
+}
+
+.trace-empty__axis {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  padding-left: 46px;
+  color: color-mix(in oklch, var(--forge-trace-text), transparent 58%);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+/* Collapsed Devices is a calm rail of pills, not a stack of square counters. */
+.bench-workspace.is-pods-collapsed {
+  --pod-column: 72px;
+}
+
+.pod-rack--collapsed {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  align-content: start;
+  gap: 10px;
+  padding: 8px 6px;
+  border-right: 1px solid var(--forge-border);
+}
+
+.pod-rack--collapsed > .panel-collapse-button--vertical {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  margin: 0 auto 2px;
+  border: 1px solid var(--forge-border);
+  border-radius: 999px;
+  background: var(--forge-surface-raised);
+}
+
+.pod-rack--collapsed > .panel-collapse-button--vertical > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.pod-rack-compact-count,
+.pod-rack-compact-routes {
+  width: 52px;
+  margin: 0 auto;
+  border: 0;
+}
+
+.pod-rack-compact-count {
+  gap: 2px;
+  padding: 10px 4px 7px;
+  border-radius: 26px;
+  background: var(--forge-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--forge-border);
+}
+
+.pod-rack-compact-count strong {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.pod-rack-compact-count span {
+  font-size: 8px;
+  line-height: 1.2;
+}
+
+.pod-rack-compact-selection {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--forge-border);
+}
+
+.pod-rack-compact-routes {
+  gap: 7px;
+  padding: 0 5px;
+}
+
+.pod-rack-compact-routes span {
+  min-height: 36px;
+  border-radius: 18px;
+  background: var(--forge-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--forge-border);
+}
+
+@media (max-width: 760px) {
+  .signal-toolbar__controls {
+    grid-template-columns: 1fr;
+    row-gap: 6px;
+  }
+
+  .preview-control-cluster {
+    justify-self: stretch;
+  }
+}
+
+/* Final action sizing after the compact browser-review layer. */
+.run-actions > .instrument-button--pause,
+.run-actions > .instrument-button--stop {
+  height: 36px;
+  min-height: 36px;
+}
+
+.run-actions {
+  grid-template-areas:
+    "modes modes"
+    "target target"
+    "preview record"
+    "pause stop";
+}
+
+.run-actions > .instrument-button--preview {
+  grid-area: preview;
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+}
+
+/* Preview-scale controls belong to the data surface, not the workspace chrome. */
+.signal-toolbar__controls {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.trace-stage {
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+}
+
+.preview-display-controls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 3px 6px;
+  color: var(--forge-trace-text);
+  border-bottom: 1px solid var(--forge-trace-border);
+  background: #0b0b0b;
+}
+
+.preview-display-controls .preview-control-cluster {
+  justify-self: auto;
+}
+
+.preview-display-controls .segmented {
+  min-height: 30px;
+  height: 30px;
+  padding: 1px;
+  color: #d7d7d7;
+  background: #202020;
+}
+
+.preview-display-controls .segmented button {
+  min-width: 48px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 9px;
+  color: #d7d7d7;
+  background: transparent;
+}
+
+.preview-display-controls .segmented button:hover:not(:disabled) {
+  color: #fff;
+  background: #303030;
+}
+
+.preview-display-controls .segmented button.active {
+  color: #050505;
+  background: #f4f4f4;
+  box-shadow: none;
+}
+
+.trace-stage__viewport {
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Trace identity and display controls are one selectable instrument bar. */
+.preview-trace-metadata {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #c9c9c9;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.preview-trace-metadata__source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-trace-metadata__metric,
+.preview-spike-summary > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 1px solid #343434;
+  white-space: nowrap;
+}
+
+.preview-trace-metadata__metric small,
+.preview-spike-summary small {
+  color: #777;
+  font-size: 7px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+.preview-trace-metadata__metric strong,
+.preview-spike-summary strong {
+  color: #f2f2f2;
+  font-size: 10px;
+}
+
+.preview-trace-metadata__metric em {
+  color: #a8a8a8;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.preview-spike-summary {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+}
+
+.preview-spike-summary > span:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.trace-theme-toggle {
+  color: #d7d7d7;
+  border: 1px solid #3b3b3b;
+  background: #202020;
+}
+
+.trace-theme-toggle:hover,
+.trace-theme-toggle[aria-pressed="true"] {
+  color: #050505;
+  background: #f4f4f4;
+}
+
+.trace-stage[data-trace-theme="light"] {
+  filter: invert(1);
+}
+
+.trace-channel-lanes {
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  display: grid;
+}
+
+.trace-channel-lane {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.trace-channel-lane:hover {
+  background: rgb(255 255 255 / 0.035);
+}
+
+.trace-channel-lane:focus-visible {
+  z-index: 1;
+  outline: 2px solid #f4f4f4;
+  outline-offset: -2px;
+}
+
+/* Spike is overview-first: each channel is a waveform tile in a dense matrix. */
+.spike-preview-panel {
+  min-width: 0;
+  min-height: 0;
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  padding: 4px;
+}
+
+.spike-overview-layout {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.spike-overview-layout.has-detail {
+  grid-template-columns: minmax(300px, 1.25fr) minmax(260px, .75fr);
+}
+
+.spike-channel-browser,
+.spike-detail-panel {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 27px minmax(0, 1fr);
+  border: 1px solid #303030;
+  background: #111;
+}
+
+.spike-channel-browser__header,
+.spike-detail-header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  color: #aaa;
+  border-bottom: 1px solid #303030;
+  font: 700 8px var(--mono);
+  letter-spacing: .04em;
+}
+
+.spike-channel-browser__header strong {
+  color: #eee;
+}
+
+.spike-channel-browser__header em {
+  margin-left: auto;
+  color: #777;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.spike-channel-overview {
+  min-height: 0;
+  position: relative;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  scrollbar-color: #555 #111;
+  background: #0d0d0d;
+}
+
+.spike-channel-overview::-webkit-scrollbar {
+  width: 10px;
+}
+
+.spike-channel-overview::-webkit-scrollbar-thumb {
+  border: 2px solid #111;
+  background: #555;
+}
+
+.spike-channel-overview__window {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  left: 4px;
+  display: grid;
+  grid-template-columns: repeat(var(--spike-grid-columns), minmax(0, 1fr));
+  grid-auto-rows: 80px;
+  gap: 6px;
+  padding-top: 3px;
+}
+
+.spike-channel-card {
+  min-width: 0;
+  width: 100%;
+  height: 80px;
+  display: grid;
+  grid-template-rows: 18px minmax(0, 1fr);
+  gap: 2px;
+  padding: 4px 5px 5px;
+  color: #999;
+  border: 1px solid #303030;
+  border-radius: 2px;
+  background: #121212;
+  font: 650 8px var(--mono);
+  text-align: left;
+  cursor: pointer;
+}
+
+.spike-channel-card:hover,
+.spike-channel-card:focus-visible {
+  color: #eee;
+  border-color: #777;
+  background: #191919;
+}
+
+.spike-channel-card.is-selected {
+  color: #fff;
+  border-color: #eee;
+  box-shadow: inset 0 0 0 1px #eee;
+  background: #1e1e1e;
+}
+
+.spike-channel-card__header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+}
+
+.spike-channel-card__header small {
+  color: #777;
+  font: 600 7px var(--mono);
+}
+
+.spike-channel-card.is-selected .spike-channel-card__header small {
+  color: #ccc;
+}
+
+.spike-channel-waveforms {
+  min-height: 0;
+  display: block;
+  overflow: hidden;
+  border: 1px solid #242424;
+  background: #0d0d0d;
+}
+
+.spike-channel-waveforms svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.spike-channel-waveforms line {
+  stroke: #292929;
+}
+
+.spike-channel-waveforms polyline {
+  fill: none;
+  stroke: #ddd;
+  stroke-width: 1.1;
+  opacity: .68;
+  vector-effect: non-scaling-stroke;
+}
+
+.spike-channel-waveforms > em {
+  display: block;
+  padding-top: 19px;
+  color: #666;
+  font-size: 7px;
+  font-style: normal;
+  text-align: center;
+}
+
+.spike-detail-header {
+  gap: 6px;
+  padding-right: 3px;
+}
+
+.spike-detail-header > div:first-child {
+  min-width: 0;
+  display: grid;
+  margin-right: auto;
+}
+
+.spike-detail-header span {
+  overflow: hidden;
+  color: #777;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spike-detail-close {
+  height: 21px;
+  min-width: 23px;
+  padding: 0;
+  color: #bbb;
+  border: 0;
+  background: transparent;
+  font: 700 14px var(--mono);
+}
+
+.spike-detail-close:hover,
+.spike-detail-close:focus-visible {
+  color: #111;
+  background: #eee;
+}
+
+.spike-detail-body {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1.08fr) minmax(0, .92fr);
+  gap: 4px;
+  background: #090909;
+}
+
+.spike-detail-waveforms,
+.spike-cluster-panel {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 24px minmax(0, 1fr);
+  border: 1px solid #292929;
+  background: #111;
+}
+
+.spike-detail-waveforms > header,
+.spike-cluster-panel > header,
+.spike-cluster-card > header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 7px;
+  color: #eee;
+  border-bottom: 1px solid #292929;
+  font: 700 8px var(--mono);
+  letter-spacing: .04em;
+}
+
+.spike-detail-waveforms > header span,
+.spike-cluster-panel > header span,
+.spike-cluster-card > header span {
+  overflow: hidden;
+  color: #777;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spike-detail-canvas,
+.spike-detail-canvas canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: block;
+}
+
+.spike-cluster-grid {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 5px;
+}
+
+.spike-cluster-card {
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: 22px minmax(72px, 1fr) auto;
+  border: 1px solid #3a3a3a;
+  background: #0d0d0d;
+}
+
+.spike-cluster-card svg {
+  width: 100%;
+  height: 100%;
+  min-height: 72px;
+  display: block;
+}
+
+.spike-cluster-card svg line {
+  stroke: #2d2d2d;
+}
+
+.spike-cluster-card svg polyline {
+  fill: none;
+  stroke: #8a8a8a;
+  stroke-width: 1;
+  opacity: .34;
+  vector-effect: non-scaling-stroke;
+}
+
+.spike-cluster-card svg polyline.is-centroid {
+  stroke: #f2f2f2;
+  stroke-width: 1.6;
+  opacity: 1;
+}
+
+.spike-cluster-card p {
+  margin: 0;
+  padding: 5px 7px;
+  color: #777;
+  border-top: 1px solid #242424;
+  font: 600 7px/1.35 var(--mono);
+}
+
+@media (max-width: 760px) {
+  .spike-overview-layout.has-detail {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .spike-overview-layout.has-detail .spike-detail-panel {
+    position: absolute;
+    inset: 24px 4px 4px 16%;
+    z-index: 4;
+  }
+
+  .preview-display-controls {
+    justify-content: stretch;
+  }
+
+  .preview-display-controls .preview-control-cluster,
+  .preview-display-controls .segmented {
+    flex: 1;
+  }
+
+  .preview-display-controls .segmented button {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+/* Final workspace placement: the compact brand is part of the Devices rail. */
+.app-shell {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.pod-rack {
+  grid-template-rows: 38px auto minmax(0, 1fr) 48px;
+}
+
+.pod-rack--collapsed {
+  grid-template-rows: 38px auto auto auto minmax(0, 1fr) 48px;
+}
+
+.pod-rack-footer {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  color: var(--forge-ink-tertiary);
+  border-top: 1px solid var(--forge-border);
+  background: var(--forge-surface);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.pod-rack-footer .theme-toggle {
+  color: var(--forge-ink-strong);
+  border: 1px solid var(--forge-border-strong);
+  background: var(--forge-surface);
+}
+
+.pod-rack-footer .theme-toggle:hover {
+  color: var(--forge-ink-strong);
+  background: var(--forge-surface);
+}
+
+.pod-rack-footer--collapsed {
+  justify-content: center;
+  padding: 4px 0;
+}
+
+/* Device identity, stream contract, view switcher, and actions share one toolbar row. */
+.signal-toolbar__primary {
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.signal-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.signal-title__heading {
+  width: auto;
+  min-width: 0;
+  flex: 0 1 22ch;
+  justify-content: flex-start;
+  padding-right: 24px;
+}
+
+.signal-device-name {
+  width: 22ch;
+  max-width: 22ch;
+}
+
+.signal-title .signal-input-contract {
+  width: auto;
+  flex: 0 0 auto;
+  margin: 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.signal-title > .signal-view-tabs {
+  width: max-content;
+  flex: 0 0 auto;
+  justify-self: auto;
+}

@@ -95,7 +95,8 @@ describe("ProtectedReplayBackend", () => {
       snapshot: daemon("new", { protected_replay_available: false }),
     });
     const backend = new ProtectedReplayBackend();
-    await expect(backend.connect()).rejects.toThrow("没有启用");
+    await expect(backend.connect()).rejects.toThrow("capability is disabled");
+    backend.disconnect();
   });
 
   it("restores a failed Run context and acknowledges it without erasing evidence", async () => {
@@ -128,5 +129,6 @@ describe("ProtectedReplayBackend", () => {
     });
     expect(backend.getSnapshot().machine.writer).toBe("disabled");
     expect(backend.getSnapshot().events.at(-1)?.code).toBe("REPLAY_FAILURE_ACKNOWLEDGED");
+    backend.disconnect();
   });
 });

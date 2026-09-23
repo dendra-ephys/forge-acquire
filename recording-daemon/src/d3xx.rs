@@ -2,7 +2,7 @@
 //!
 //! The vendor DLL is loaded only from System32 or an explicit absolute path.
 //! Production open is by a unique nonempty serial number, never by index.  A
-//! device is not returned until exact FT601 type, SuperSpeed operation and the
+//! device is not returned until exact FT600 type, SuperSpeed operation and the
 //! receipt-selected 66-MHz bring-up or 100-MHz release 245/one-channel
 //! configuration plus an approved readback hash agree.
 //! No such approved readback hash is checked into the current project, so this
@@ -25,12 +25,13 @@ use windows_sys::Win32::System::LibraryLoader::{
 };
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
-use crate::d3xx_admission::{Ft601FifoClockProfile, VerifiedFt601Admission};
+use crate::d3xx_admission::{Ft600FifoClockProfile, VerifiedFt600Admission};
+use crate::receiver_pod_v2_session::{validate_rps2_frame, Rps2FrameTransport};
 
 const FT_OK: u32 = 0;
 const FT_IO_PENDING: u32 = 24;
 const FT_IO_INCOMPLETE: u32 = 25;
-const FT_DEVICE_601: u32 = 601;
+const FT_DEVICE_600: u32 = 600;
 const FT_FLAGS_OPENED: u32 = 1;
 const FT_FLAGS_SUPERSPEED: u32 = 4;
 const FT_OPEN_BY_SERIAL_NUMBER: u32 = 1;
@@ -224,6 +225,11 @@ pub struct Ft601UsbDescriptorEvidence {
     pub descriptor_sha256: Hash32,
 }
 
+/// FT600 V2 names used by new callers.  The byte-level descriptor evidence is
+/// identical in shape; identity is enforced by FT_DEVICE_600 and its receipt.
+pub type Ft600ConfigurationEvidence = Ft601ConfigurationEvidence;
+pub type Ft600UsbDescriptorEvidence = Ft601UsbDescriptorEvidence;
+
 struct D3xxFunctions {
     create_device_info_list: FtCreateDeviceInfoList,
     get_device_info_detail: FtGetDeviceInfoDetail,
@@ -361,9 +367,9 @@ impl D3xxLibrary {
         Ok(devices)
     }
 
-    pub fn open_admitted_ft601(
+    pub fn open_admitted_ft600(
         self: &Arc<Self>,
-        admission: &VerifiedFt601Admission,
+        admission: &VerifiedFt600Admission,
     ) -> io::Result<(
         D3xxDevice,
         Ft601ConfigurationEvidence,
@@ -377,8 +383,8 @@ impl D3xxLibrary {
         }
         let serial_number = admission.serial_number();
         let devices = self.enumerate()?;
-        let selected = select_unique_ft601(&devices, serial_number)?;
-        validate_ft601_device_state(selected)?;
+        let selected = select_unique_ft600(&devices, serial_number)?;
+        validate_ft600_device_state(selected)?;
         validate_serial(serial_number)?;
         let serial =
             CString::new(serial_number).map_err(|_| invalid_input("D3XX serial contains NUL"))?;
@@ -418,7 +424,7 @@ impl D3xxLibrary {
                 return Err(error);
             }
         };
-        if let Err(error) = validate_ft601_configuration(
+        if let Err(error) = validate_ft600_configuration(
             &configuration,
             admission.configuration_readback_sha256(),
             admission.fifo_clock_profile(),
@@ -426,7 +432,7 @@ impl D3xxLibrary {
             device.close();
             return Err(error);
         }
-        if let Err(error) = validate_ft601_usb_descriptors(
+        if let Err(error) = validate_ft600_usb_descriptors(
             &descriptors,
             &configuration,
             admission.usb_descriptor_sha256(),
@@ -826,10 +832,22 @@ impl D3xxDevice {
     /// endpoint. Arbitrary bytes, replies, worker messages and stimulation
     /// commands are not admitted by this M3 acquisition-only adapter.
     pub(crate) fn write_control(&mut self, message: &[u8]) -> io::Result<()> {
+        validate_outbound_control(message)?;
+        self.write_outbound_checked(message)
+    }
+
+    /// Sends one validated V2 `RPS2` session frame. This separate entry point
+    /// prevents the retired Host-internal M0 wire from being silently repurposed
+    /// as a physical FT600 command payload.
+    pub(crate) fn write_rps2_session_frame(&mut self, frame: &[u8]) -> io::Result<()> {
+        validate_rps2_frame(frame)?;
+        self.write_outbound_checked(frame)
+    }
+
+    fn write_outbound_checked(&mut self, message: &[u8]) -> io::Result<()> {
         if self.handle.is_null() || !self.write_ready || self.io_poisoned {
             return Err(invalid_input("D3XX write pipe is not ready"));
         }
-        validate_outbound_control(message)?;
         if message.len() > u32::MAX as usize {
             return Err(invalid_input("D3XX write message exceeds ULONG"));
         }
@@ -1073,6 +1091,12 @@ impl D3xxDevice {
     }
 }
 
+impl Rps2FrameTransport for D3xxDevice {
+    fn write_rps2_session_frame(&mut self, frame: &[u8]) -> io::Result<()> {
+        D3xxDevice::write_rps2_session_frame(self, frame)
+    }
+}
+
 impl Drop for D3xxDevice {
     fn drop(&mut self) {
         self.close();
@@ -1102,59 +1126,59 @@ fn validate_outbound_control(message: &[u8]) -> io::Result<()> {
     }
 }
 
-pub fn select_unique_ft601<'a>(
+pub fn select_unique_ft600<'a>(
     devices: &'a [D3xxDeviceInfo],
     serial_number: &str,
 ) -> io::Result<&'a D3xxDeviceInfo> {
     validate_serial(serial_number)?;
     let mut matches = devices
         .iter()
-        .filter(|device| device.device_type == FT_DEVICE_601)
+        .filter(|device| device.device_type == FT_DEVICE_600)
         .filter(|device| device.serial_number == serial_number);
     let selected = matches.next().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
-            "no FT601 has the requested unique serial number",
+            "no FT600 has the requested unique serial number",
         )
     })?;
     if matches.next().is_some() {
-        return Err(invalid_data("duplicate FT601 serial number"));
+        return Err(invalid_data("duplicate FT600 serial number"));
     }
     Ok(selected)
 }
 
-pub fn validate_ft601_device_state(device: &D3xxDeviceInfo) -> io::Result<()> {
-    if device.device_type != FT_DEVICE_601 {
-        return Err(invalid_data("selected device is not an FT601"));
+pub fn validate_ft600_device_state(device: &D3xxDeviceInfo) -> io::Result<()> {
+    if device.device_type != FT_DEVICE_600 {
+        return Err(invalid_data("selected device is not an FT600"));
     }
     if device.opened() {
         return Err(io::Error::new(
             io::ErrorKind::WouldBlock,
-            "selected FT601 is already open",
+            "selected FT600 is already open",
         ));
     }
     if !device.superspeed() {
         return Err(invalid_data(
-            "selected FT601 is not enumerated at SuperSpeed",
+            "selected FT600 is not enumerated at SuperSpeed",
         ));
     }
     Ok(())
 }
 
-pub fn validate_ft601_configuration(
+pub fn validate_ft600_configuration(
     evidence: &Ft601ConfigurationEvidence,
     expected_readback_sha256: Hash32,
-    profile: Ft601FifoClockProfile,
+    profile: Ft600FifoClockProfile,
 ) -> io::Result<()> {
     if expected_readback_sha256 == [0; 32] {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "an approved nonzero FT601 configuration readback hash is required",
+            "an approved nonzero FT600 configuration readback hash is required",
         ));
     }
     let expected_fifo_clock = match profile {
-        Ft601FifoClockProfile::Bringup66Mhz => CONFIGURATION_FIFO_CLOCK_66_MHZ,
-        Ft601FifoClockProfile::Release100Mhz => CONFIGURATION_FIFO_CLOCK_100_MHZ,
+        Ft600FifoClockProfile::Bringup66Mhz => CONFIGURATION_FIFO_CLOCK_66_MHZ,
+        Ft600FifoClockProfile::Release100Mhz => CONFIGURATION_FIFO_CLOCK_100_MHZ,
     };
     if evidence.fifo_clock_raw != expected_fifo_clock
         || evidence.fifo_mode_raw != CONFIGURATION_FIFO_MODE_245
@@ -1163,13 +1187,13 @@ pub fn validate_ft601_configuration(
     {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "FT601 configuration readback does not match the admitted clock/profile image",
+            "FT600 configuration readback does not match the admitted clock/profile image",
         ));
     }
     Ok(())
 }
 
-pub fn validate_ft601_usb_descriptors(
+pub fn validate_ft600_usb_descriptors(
     descriptors: &Ft601UsbDescriptorEvidence,
     configuration: &Ft601ConfigurationEvidence,
     expected_descriptor_sha256: Hash32,
@@ -1177,7 +1201,7 @@ pub fn validate_ft601_usb_descriptors(
     if expected_descriptor_sha256 == [0; 32] {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "an approved nonzero FT601 USB descriptor hash is required",
+            "an approved nonzero FT600 USB descriptor hash is required",
         ));
     }
     if descriptors.vendor_id != configuration.vendor_id
@@ -1186,7 +1210,7 @@ pub fn validate_ft601_usb_descriptors(
     {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "FT601 USB descriptors do not match the admission receipt or configuration",
+            "FT600 USB descriptors do not match the admission receipt or configuration",
         ));
     }
     Ok(())
@@ -1383,9 +1407,42 @@ fn invalid_data_owned(message: String) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
+// Historical helper spellings are private test-only shims.  Production exports
+// below are FT600-only and cannot open an FT601 receipt or device.
+#[cfg(test)]
+const FT_DEVICE_601: u32 = FT_DEVICE_600;
+#[cfg(test)]
+fn select_unique_ft601<'a>(
+    devices: &'a [D3xxDeviceInfo],
+    serial: &str,
+) -> io::Result<&'a D3xxDeviceInfo> {
+    select_unique_ft600(devices, serial)
+}
+#[cfg(test)]
+fn validate_ft601_device_state(device: &D3xxDeviceInfo) -> io::Result<()> {
+    validate_ft600_device_state(device)
+}
+#[cfg(test)]
+fn validate_ft601_configuration(
+    evidence: &Ft601ConfigurationEvidence,
+    hash: Hash32,
+    profile: Ft600FifoClockProfile,
+) -> io::Result<()> {
+    validate_ft600_configuration(evidence, hash, profile)
+}
+#[cfg(test)]
+fn validate_ft601_usb_descriptors(
+    descriptors: &Ft601UsbDescriptorEvidence,
+    configuration: &Ft601ConfigurationEvidence,
+    hash: Hash32,
+) -> io::Result<()> {
+    validate_ft600_usb_descriptors(descriptors, configuration, hash)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::d3xx_admission::Ft601FifoClockProfile;
     use forge_protocol_v1::{encode_low_speed, AckV1};
     use std::collections::VecDeque;
     use std::sync::{Mutex, OnceLock};
@@ -1716,19 +1773,19 @@ mod tests {
     }
 
     #[test]
-    fn selection_requires_exact_unique_ft601_serial() {
+    fn selection_requires_exact_unique_ft600_serial() {
         let devices = [
-            device(FT_DEVICE_601, "FORGEPOD000001", FT_FLAGS_SUPERSPEED),
-            device(600, "LEGACYFT600001", FT_FLAGS_SUPERSPEED),
+            device(FT_DEVICE_600, "FORGEPOD000001", FT_FLAGS_SUPERSPEED),
+            device(601, "LEGACYFT601001", FT_FLAGS_SUPERSPEED),
         ];
         assert_eq!(
-            select_unique_ft601(&devices, "FORGEPOD000001")
+            select_unique_ft600(&devices, "FORGEPOD000001")
                 .unwrap()
                 .device_type,
-            FT_DEVICE_601
+            FT_DEVICE_600
         );
-        assert!(select_unique_ft601(&devices, "LEGACYFT600001").is_err());
-        assert!(select_unique_ft601(&devices, "").is_err());
+        assert!(select_unique_ft600(&devices, "LEGACYFT601001").is_err());
+        assert!(select_unique_ft600(&devices, "").is_err());
     }
 
     #[test]

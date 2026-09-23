@@ -45,7 +45,7 @@ export function FaultRecoveryPanel({
       <header>
         <div>
           <span className="instrument-kicker">FAULT / RECOVERY</span>
-          <h2 id="fault-recovery-title">锁存故障</h2>
+          <h2 id="fault-recovery-title">Latched faults</h2>
         </div>
         <span className="fault-count">{faults.length}</span>
       </header>
@@ -58,7 +58,7 @@ export function FaultRecoveryPanel({
               <div>
                 <strong>{fault.title}</strong>
                 <span>{fault.detail}</span>
-                <small>恢复：{fault.recovery}</small>
+                <small>Recovery: {fault.recovery}</small>
               </div>
             </article>
           ))}
@@ -66,31 +66,31 @@ export function FaultRecoveryPanel({
             className="fault-clear"
             type="button"
             disabled={busy || !hasRecoverableFault}
-            title={hasRecoverableFault ? "清除 adapter 标记为 recoverable 的提示" : "当前故障不可清除；必须保留失败证据"}
+            title={hasRecoverableFault ? "Clear notices marked recoverable by the adapter" : "Current faults cannot be cleared; failure evidence must be retained"}
             onClick={onClearResolved}
           >
             <RotateCcw size={14} aria-hidden="true" />
-            {hasRecoverableFault ? "清除可恢复提示" : "失败证据已锁存"}
+            {hasRecoverableFault ? "Clear recoverable notices" : "Failure evidence latched"}
           </button>
         </div>
       ) : (
-        <p className="fault-empty">无锁存故障。告警不会以短暂 toast 代替 Run 状态。</p>
+        <p className="fault-empty">No latched faults. Transient toasts never replace Run state.</p>
       )}
 
       {injectionAvailable ? <div className="fault-injector">
         <div className="fault-injector__title">
           <Beaker size={15} aria-hidden="true" />
           <strong>Mock fault injection</strong>
-          <span>测试专用</span>
+          <span>TEST ONLY</span>
         </div>
         <select
-          aria-label="选择 mock 故障"
+          aria-label="Choose a mock fault"
           value={selectedFaultId}
           onChange={(event) => onSelectFault(event.target.value)}
         >
           {options.map((option) => (
             <option key={option.id} value={option.id} disabled={!option.enabled}>
-              {option.label}{option.enabled ? "" : " · 当前阶段不可注入"}
+              {option.label}{option.enabled ? "" : " · unavailable in this phase"}
             </option>
           ))}
         </select>
@@ -101,7 +101,7 @@ export function FaultRecoveryPanel({
           disabled={busy || !selected?.enabled}
           onClick={onInject}
         >
-          注入选定故障
+          Inject selected fault
         </button>
       </div> : (
         <div className="fault-injector fault-injector--unavailable" role="note">
@@ -110,7 +110,7 @@ export function FaultRecoveryPanel({
             <strong>Fault injection unavailable</strong>
             <span>REAL JOURNAL PROTECTED</span>
           </div>
-          <p>当前 Tauri 软件记录路径会写入真实 create-new journal，因此不允许 GUI 注入丢包或持久化故障；浏览器 mock QA 仍保留测试端口。</p>
+          <p>The Tauri software path writes a real create-new journal, so the GUI cannot inject packet-loss or persistence faults. Browser mock QA retains the test port.</p>
         </div>
       )}
     </section>

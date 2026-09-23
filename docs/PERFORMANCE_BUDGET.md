@@ -22,10 +22,16 @@ Tauri JSON commands/events are reserved for low-rate control and state. They are
 - one acquisition workspace loads eagerly; future settings, NWB inspection, and maintenance screens load lazily;
 - no chart framework is included for live traces;
 - production JS gzip budget: 100 kB for the initial control surface;
-- production CSS gzip budget: 10 kB;
+- production CSS gzip budget: 16 KiB for the dual-theme semantic instrument layer;
+- complete lazy-loaded payload budgets: 112 KiB JS and 18 KiB CSS gzip;
 - first meaningful instrument shell target: under 500 ms on the reference acquisition PC after WebView warm-up.
 
-Current measured bundle-gate output on 2026-08-26 is 77.65 KiB gzip JS and 5.16 KiB gzip CSS. The same build's Vite report uses decimal units and reports 79.51 kB / 5.28 kB. This is build-size evidence only, not a startup-latency measurement.
+Current measured bundle-gate output on 2026-09-23 is 99.16 KiB startup JS and
+14.41 KiB startup CSS; complete lazy-loaded totals are 108.28 KiB JS and 15.90 KiB CSS.
+The CSS increase is the bounded cost of the light/dark token layer and selected Apps SDK UI
+primitive styling. The default Apps SDK UI KaTeX/CDN stylesheet is excluded, and the gate still
+rejects remote CSS `url()`/`@import` resources. This is build-size evidence only, not a
+startup-latency measurement.
 
 ## Runtime budgets
 

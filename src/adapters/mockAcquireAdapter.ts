@@ -40,11 +40,9 @@ import {
 } from "./acquireAdapter";
 import {
   SYNTHETIC_DEFAULT_SEED,
-  SYNTHETIC_PREVIEW_MICROVOLTS_PER_COUNT,
-  SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES,
-  SYNTHETIC_SPIKE_TEMPLATE,
   SyntheticNeuralModel,
 } from "../core/syntheticNeural";
+import type { PreviewNeuralModel } from "../core/previewNeuralModel";
 
 const MOCK_ADAPTER_ID = "forge.acquire.mock.v1";
 const DEFAULT_TRANSITION_DELAY_MS = 12;
@@ -57,6 +55,7 @@ export interface MockAcquireAdapterOptions {
   connectedPodCount?: number;
   neuralChannelCount?: number;
   syntheticSeed?: number | bigint;
+  previewModel?: PreviewNeuralModel;
   now?: () => number;
 }
 
@@ -145,7 +144,10 @@ function copyPreviewFrame(frame: PreviewFrame): PreviewFrame {
       ...frame,
       processing,
       coverage,
-      channelActivity: frame.channelActivity.map((channel) => ({ ...channel })),
+      channelActivity: frame.channelActivity.map((channel) => ({
+        ...channel,
+        recentWaveforms: channel.recentWaveforms.map((waveform) => [...waveform]),
+      })),
       accounting: { ...frame.accounting },
       raster: frame.raster.map((event) => ({ ...event })),
       selectedChannelWaveforms: {
@@ -183,7 +185,7 @@ class MockPreviewSource implements PreviewSource {
   private readonly intervalMs: number;
   private readonly resolvePod: (key: PodKey) => PodSnapshot | null;
   private readonly runContext: () => { runId: string | null; runEpoch: bigint | null };
-  private readonly model: SyntheticNeuralModel;
+  private readonly model: PreviewNeuralModel;
   private readonly listeners = new Set<(frame: PreviewFrame) => void>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private latest: PreviewFrame | null = null;
@@ -204,7 +206,7 @@ class MockPreviewSource implements PreviewSource {
     intervalMs: number,
     resolvePod: (key: PodKey) => PodSnapshot | null,
     runContext: () => { runId: string | null; runEpoch: bigint | null },
-    model: SyntheticNeuralModel,
+    model: PreviewNeuralModel,
   ) {
     this.now = now;
     this.intervalMs = intervalMs;
@@ -333,16 +335,23 @@ class MockPreviewSource implements PreviewSource {
     if (this.request.signalKind === "spike") {
       const maxReturnedEvents = 64;
       const channelActivity = Array.from({ length: input.neuralChannelCount }, (_, channel) => {
-        const observedEventCount = this.model.eventCountInRange(
+        const centers = [...this.model.eventCentersInRange(
           channel,
           base.sourceSampleStart,
           base.sourceSampleEndExclusive,
-        );
+        )];
+        const waveformCenters = centers.filter((center) => center > base.sourceSampleStart
+          && center + BigInt(
+            this.model.waveformPointCount - this.model.waveformPretriggerSamples,
+          ) <= base.sourceSampleEndExclusive).slice(-3);
+        const observedEventCount = centers.length;
         return {
           channel,
           observedEventCount,
           rateHz: observedEventCount / this.request.windowSeconds,
           valid: true,
+          recentWaveforms: waveformCenters.map((center) => this.model.waveformAtEvent(channel, center)
+            .map((value) => value * this.model.previewMicrovoltsPerCount)),
         };
       });
       const bankActivity = channelActivity.slice(channelStart, channelStart + channelCount);
@@ -389,7 +398,7 @@ class MockPreviewSource implements PreviewSource {
             channel: activity.channel,
             eventOffsetMs: Number(center - base.sourceSampleStart) * 1_000 / input.sampleRateHz,
             peakValue: this.model.sampleAt(center, activity.channel).wideband
-              * SYNTHETIC_PREVIEW_MICROVOLTS_PER_COUNT,
+              * this.model.previewMicrovoltsPerCount,
           };
         });
       }).sort((left, right) => left.eventOffsetMs - right.eventOffsetMs || left.channel - right.channel);
@@ -401,7 +410,7 @@ class MockPreviewSource implements PreviewSource {
             base.sourceSampleEndExclusive,
           )].filter((center) => center > base.sourceSampleStart
             && center + BigInt(
-              SYNTHETIC_SPIKE_TEMPLATE.length - SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES,
+              this.model.waveformPointCount - this.model.waveformPretriggerSamples,
             ) <= base.sourceSampleEndExclusive)
         : [];
       const waveformCoverage = selectedCenters.length <= MAX_SELECTED_CHANNEL_WAVEFORMS
@@ -412,15 +421,15 @@ class MockPreviewSource implements PreviewSource {
         : selectedCenters.slice(-MAX_SELECTED_CHANNEL_WAVEFORMS);
       const selectedChannelWaveformEvents = returnedCenters.map((center) => {
         const values = this.model.waveformAtEvent(this.request.selectedChannel, center)
-          .map((value) => value * SYNTHETIC_PREVIEW_MICROVOLTS_PER_COUNT);
+          .map((value) => value * this.model.previewMicrovoltsPerCount);
         return {
           eventId: `MOCK-SPIKE-${this.model.scenarioHash.slice(0, 12)}-${this.request.selectedChannel}-${center}`,
           channel: this.request.selectedChannel,
           centerSample: center,
-          snippetSampleStart: center - BigInt(SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES),
+          snippetSampleStart: center - BigInt(this.model.waveformPretriggerSamples),
           snippetSampleEndExclusive: center
-            + BigInt(values.length - SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES),
-          preTriggerSamples: SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES,
+            + BigInt(values.length - this.model.waveformPretriggerSamples),
+          preTriggerSamples: this.model.waveformPretriggerSamples,
           values,
         };
       });
@@ -455,8 +464,12 @@ class MockPreviewSource implements PreviewSource {
         processing: {
           status: "available",
           scope: "mock",
-          algorithmId: "mock.spike.v3",
-          summary: "Mock waveforms",
+          algorithmId: this.model.sourceKind === "nwb-derived-reconstruction"
+            ? "forge.mock.nwb-derived-spike-preview.v1"
+            : "mock.spike.v3",
+          summary: this.model.sourceKind === "nwb-derived-reconstruction"
+            ? "Real NWB event waveforms in a deterministic reconstructed demo stream"
+            : "Mock waveforms",
           sourceSampleRateHz: input.sampleRateHz,
           displaySampleRateHz: null,
           passbandHz: null,
@@ -513,7 +526,7 @@ class MockPreviewSource implements PreviewSource {
             bucketEnd - 1n,
           ]);
           if (!lfp) {
-            const pre = BigInt(SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES);
+            const pre = BigInt(this.model.waveformPretriggerSamples);
             const eventSearchStart = bucketStart > pre ? bucketStart - pre : 0n;
             const eventSearchEnd = bucketEnd + pre + 1n;
             for (const center of this.model.eventCentersInRange(
@@ -521,8 +534,8 @@ class MockPreviewSource implements PreviewSource {
               eventSearchStart,
               eventSearchEnd,
             )) {
-              for (let offset = -SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES;
-                offset <= SYNTHETIC_SPIKE_PRETRIGGER_SAMPLES;
+              for (let offset = -this.model.waveformPretriggerSamples;
+                offset <= this.model.waveformPointCount - this.model.waveformPretriggerSamples;
                 offset += 1) {
                 const sample = center + BigInt(offset);
                 if (sample >= bucketStart && sample < bucketEnd) candidates.add(sample);
@@ -533,7 +546,7 @@ class MockPreviewSource implements PreviewSource {
             lfp
               ? this.model.lfpAt(sample, channel)
               : this.model.sampleAt(sample, channel).wideband
-          ) * SYNTHETIC_PREVIEW_MICROVOLTS_PER_COUNT);
+          ) * this.model.previewMicrovoltsPerCount);
           const minimum = Math.min(...values);
           const maximum = Math.max(...values);
           minima.push(minimum);
@@ -562,12 +575,20 @@ class MockPreviewSource implements PreviewSource {
         processing: {
           status: "available",
           scope: "mock",
-          algorithmId: lfp
-            ? "forge.mock.synthetic-lfp-component-sampled-extrema.v3"
-            : "forge.mock.synthetic-wideband-sampled-extrema.v3",
-          summary: lfp
-            ? "Bounded sampled extrema of the LFP truth component from the shared integer scenario"
-            : "Bounded sampled extrema from the shared integer wideband scenario; not complete bucket min/max",
+          algorithmId: this.model.sourceKind === "nwb-derived-reconstruction"
+            ? lfp
+              ? "forge.mock.nwb-derived-baseline-sampled-extrema.v1"
+              : "forge.mock.nwb-derived-reconstruction-sampled-extrema.v1"
+            : lfp
+              ? "forge.mock.synthetic-lfp-component-sampled-extrema.v3"
+              : "forge.mock.synthetic-wideband-sampled-extrema.v3",
+          summary: this.model.sourceKind === "nwb-derived-reconstruction"
+            ? lfp
+              ? "Synthetic low-frequency baseline paired with the NWB-derived waveform reconstruction"
+              : "Sampled extrema of a demo stream reconstructed from real NWB event waveforms"
+            : lfp
+              ? "Bounded sampled extrema of the LFP truth component from the shared integer scenario"
+              : "Bounded sampled extrema from the shared integer wideband scenario; not complete bucket min/max",
           sourceSampleRateHz: input.sampleRateHz,
           displaySampleRateHz: points / this.request.windowSeconds,
           passbandHz: null,
@@ -610,13 +631,14 @@ export class MockAcquireAdapter implements AcquireAdapter {
   private readonly transitionDelayMs: number;
   private readonly occupiedPodCount: number;
   private readonly neuralChannelCount: number;
-  private readonly syntheticModel: SyntheticNeuralModel;
+  private readonly previewModel: PreviewNeuralModel;
   private readonly preview: MockPreviewSource;
   private readonly listeners = new Set<SnapshotListener>();
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private readonly timerLanes = new Map<ReturnType<typeof setTimeout>, "preview" | "lifecycle">();
   private readonly topologyEvidenceHash = mockHash(1n, 301);
   private lifecycle: AcquireLifecycleState = "disconnected";
+  private recordingPaused = false;
   private previewState: PreviewSessionState = "stopped";
   private controlConnection: ControlConnectionState = "disconnected";
   private stale = false;
@@ -645,11 +667,13 @@ export class MockAcquireAdapter implements AcquireAdapter {
     this.transitionDelayMs = options.transitionDelayMs ?? DEFAULT_TRANSITION_DELAY_MS;
     const previewIntervalMs = options.previewIntervalMs ?? DEFAULT_PREVIEW_INTERVAL_MS;
     this.occupiedPodCount = options.connectedPodCount ?? 3;
-    this.neuralChannelCount = options.neuralChannelCount ?? 32;
-    this.syntheticModel = new SyntheticNeuralModel({
+    this.previewModel = options.previewModel ?? new SyntheticNeuralModel({
       sampleRateHz: 30_000,
       seed: options.syntheticSeed ?? SYNTHETIC_DEFAULT_SEED,
     });
+    this.neuralChannelCount = options.neuralChannelCount
+      ?? this.previewModel.channelCount
+      ?? 32;
     if (!Number.isFinite(this.transitionDelayMs) || this.transitionDelayMs < 0) {
       throw new RangeError("transitionDelayMs must be a finite non-negative number");
     }
@@ -666,6 +690,12 @@ export class MockAcquireAdapter implements AcquireAdapter {
       || this.neuralChannelCount > 128) {
       throw new RangeError("neuralChannelCount must be an integer from 1 through 128");
     }
+    if (this.previewModel.channelCount !== null
+      && this.neuralChannelCount !== this.previewModel.channelCount) {
+      throw new RangeError(
+        `preview model requires ${this.previewModel.channelCount} channels, got ${this.neuralChannelCount}`,
+      );
+    }
     this.evidence = this.initialEvidence();
     this.preview = new MockPreviewSource(
       this.now,
@@ -674,7 +704,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
       () => ["recording", "stop_requested"].includes(this.lifecycle)
         ? { runId: this.runId, runEpoch: this.runEpoch }
         : { runId: null, runEpoch: null },
-      this.syntheticModel,
+      this.previewModel,
     );
     this.previewSource = this.preview;
     this.faultController = new MockFaultController(this);
@@ -705,7 +735,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
   }
 
   execute(intent: AcquireIntent): Promise<CommandReceipt> {
-    if (this.disposed) return Promise.resolve(this.reject(intent, "ADAPTER_DISPOSED", "Mock adapter 已释放"));
+    if (this.disposed) return Promise.resolve(this.reject(intent, "ADAPTER_DISPOSED", "Mock adapter has been disposed"));
     const validation = this.validateIntent(intent);
     if (validation !== null) return Promise.resolve(this.reject(intent, validation.code, validation.message));
 
@@ -737,7 +767,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
       intent: intent.type,
       accepted: true,
       reasonCode: "ACCEPTED",
-      message: "命令已接收；后续状态仅由独立 snapshot 报告",
+      message: "Command received; subsequent state is reported only by an independent snapshot",
       stateAtAcceptance,
       requestedState,
       previewStateAtAcceptance,
@@ -762,9 +792,9 @@ export class MockAcquireAdapter implements AcquireAdapter {
    */
   acknowledgeExternalFailedRun(): Promise<CommandReceipt> {
     const intent = { type: "acknowledge_failed_run" } as const;
-    if (this.disposed) return Promise.resolve(this.reject(intent, "ADAPTER_DISPOSED", "Mock adapter 已释放"));
+    if (this.disposed) return Promise.resolve(this.reject(intent, "ADAPTER_DISPOSED", "Mock adapter has been disposed"));
     if (this.runId === null) {
-      return Promise.resolve(this.reject(intent, "NO_ACTIVE_RUN", "没有需要关闭的 fixture Run"));
+      return Promise.resolve(this.reject(intent, "NO_ACTIVE_RUN", "There is no fixture Run to close"));
     }
 
     this.commandSequence += 1n;
@@ -823,14 +853,14 @@ export class MockAcquireAdapter implements AcquireAdapter {
       issuedAtMonotonicMs: this.now(),
       evidenceHash: mockHash(this.deviceNameReceiptSequence, 211),
     });
-    if (this.disposed) return Promise.resolve(rejected("ADAPTER_DISPOSED", "Mock adapter 已释放"));
-    if (current === null) return Promise.resolve(rejected("UNKNOWN_DEVICE", "Snapshot 中没有该 immutable device ID"));
+    if (this.disposed) return Promise.resolve(rejected("ADAPTER_DISPOSED", "Mock adapter has been disposed"));
+    if (current === null) return Promise.resolve(rejected("UNKNOWN_DEVICE", "The snapshot does not contain this immutable device ID"));
     if (request.expectedIdentityEvidenceHash !== current.identityEvidenceHash) {
-      return Promise.resolve(rejected("STALE_DEVICE_IDENTITY", "设备 identity receipt 已变化，请刷新后重试"));
+      return Promise.resolve(rejected("STALE_DEVICE_IDENTITY", "The device identity receipt changed; refresh and try again"));
     }
-    if (!current.writable) return Promise.resolve(rejected("NAME_READ_ONLY", "该设备没有可写的名称 capability"));
+    if (!current.writable) return Promise.resolve(rejected("NAME_READ_ONLY", "This device has no writable-name capability"));
     if (request.expectedRevision !== current.revision) {
-      return Promise.resolve(rejected("STALE_NAME_REVISION", "设备名称 revision 已变化，请刷新后重试"));
+      return Promise.resolve(rejected("STALE_NAME_REVISION", "The device-name revision changed; refresh and try again"));
     }
     const displayName = request.displayName.trim().normalize("NFC");
     const utf8Bytes = new TextEncoder().encode(displayName).byteLength;
@@ -839,13 +869,13 @@ export class MockAcquireAdapter implements AcquireAdapter {
       || /[\u0000-\u001f\u007f]/u.test(displayName)) {
       return Promise.resolve(rejected(
         "INVALID_DISPLAY_NAME",
-        `显示名称必须是 1–48 个可显示字符且不超过 ${current.maxNameUtf8Bytes ?? 0} UTF-8 bytes`,
+        `The display name must contain 1–48 visible characters and no more than ${current.maxNameUtf8Bytes ?? 0} UTF-8 bytes`,
       ));
     }
     const duplicate = this.allDeviceIdentities().some((identity) =>
       identity.deviceId !== request.deviceId
       && identity.displayName.localeCompare(displayName, undefined, { sensitivity: "accent" }) === 0);
-    if (duplicate) return Promise.resolve(rejected("DUPLICATE_DISPLAY_NAME", "当前设备列表中已存在同名设备"));
+    if (duplicate) return Promise.resolve(rejected("DUPLICATE_DISPLAY_NAME", "Another device already uses this display name"));
 
     const committedRevision = current.revision + 1n;
     this.deviceNames.set(request.deviceId, { displayName, revision: committedRevision });
@@ -857,7 +887,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
       synthetic: true,
       accepted: true,
       reasonCode: "MOCK_SESSION_COMMITTED",
-      message: "Mock 会话名称已读回；未写入设备非易失存储",
+      message: "The mock-session name was read back; device nonvolatile storage was not written",
       kind: request.kind,
       deviceId: request.deviceId,
       identityEvidenceHash: current.identityEvidenceHash,
@@ -898,8 +928,8 @@ export class MockAcquireAdapter implements AcquireAdapter {
     const message = fault.type === "counter_gap"
       ? `Mock ${runCapturingSource ? "Run" : "Preview"} source coverage failed at [${faultSampleStart}, ${faultSampleEndExclusive})`
       : fault.type === "control_pipe_loss"
-        ? "Mock control pipe 丢失；daemon Run 未停止"
-        : fault.reason ?? "Mock durability barrier 失败";
+        ? "Mock control pipe lost; the daemon Run did not stop"
+        : fault.reason ?? "Mock durability barrier failed";
     this.faults.push({
       code: fault.type,
       scope: "mock",
@@ -970,50 +1000,50 @@ export class MockAcquireAdapter implements AcquireAdapter {
       return {
         code: "COMMAND_IN_FLIGHT",
         message: this.isPreviewIntent(intent)
-          ? "上一 Preview 命令仍在等待 snapshot 转移"
-          : "上一 Recording 命令仍在等待 snapshot 转移",
+          ? "The previous Preview command is still waiting for a snapshot transition"
+          : "The previous Recording command is still waiting for a snapshot transition",
       };
     }
     switch (intent.type) {
       case "connect":
         return this.controlConnection === "connected"
-          ? { code: "ALREADY_CONNECTED", message: "控制面已连接" }
+          ? { code: "ALREADY_CONNECTED", message: "The control plane is already connected" }
           : null;
       case "disconnect_control":
         if (this.controlConnection !== "connected") {
-          return { code: "NOT_CONNECTED", message: "控制面未连接" };
+          return { code: "NOT_CONNECTED", message: "The control plane is disconnected" };
         }
         if (!["connected_idle", "finalized"].includes(this.lifecycle)) {
           return {
             code: "ACTIVE_RUN_CONTROL_REQUIRED",
-            message: "当前 Run 尚未结束；必须保留控制连接，才能执行结束并保存或确认失败",
+            message: "The current Run has not ended. Keep the control connection to end and save or acknowledge failure.",
           };
         }
         return null;
       case "start_preview": {
         if (this.controlConnection !== "connected") {
-          return { code: "NOT_CONNECTED", message: "必须先连接控制面" };
+          return { code: "NOT_CONNECTED", message: "Connect the control plane first" };
         }
         if (!["stopped", "fault"].includes(this.previewState)) {
-          return { code: "INVALID_PREVIEW_STATE", message: "Preview 已启动或正在转移" };
+          return { code: "INVALID_PREVIEW_STATE", message: "Preview is already active or transitioning" };
         }
         const pod = this.podForKey(intent.podKey);
         if (intent.topologyEvidenceHash !== this.topologyEvidenceHash || pod === null || !pod.selectable) {
-          return { code: "INVALID_PREVIEW_DEVICE", message: "Preview 设备或 topology receipt 已失效" };
+          return { code: "INVALID_PREVIEW_DEVICE", message: "The Preview device or topology receipt is stale" };
         }
         return null;
       }
       case "stop_preview":
         if (this.previewState !== "live") {
-          return { code: "INVALID_PREVIEW_STATE", message: "当前没有 live Preview" };
+          return { code: "INVALID_PREVIEW_STATE", message: "There is no live Preview" };
         }
         return null;
       case "preflight": {
         if (this.lifecycle !== "connected_idle" && this.lifecycle !== "finalized") {
-          return { code: "INVALID_STATE", message: "仅 connected_idle 或 finalized 可开始新 preflight" };
+          return { code: "INVALID_STATE", message: "A new Preflight can start only from Connected Idle or Finalized" };
         }
         if (this.previewState !== "live") {
-          return { code: "PREVIEW_REQUIRED", message: "必须先启动 Preview 并确认数据流" };
+          return { code: "PREVIEW_REQUIRED", message: "Start Preview and confirm the stream first" };
         }
         const devices = intent.plan.selectedDevices;
         const keys = devices.map((device) => device.podKey);
@@ -1035,28 +1065,36 @@ export class MockAcquireAdapter implements AcquireAdapter {
               || pod.identity.identityEvidenceHash !== device.identityEvidenceHash
               || pod.neuralInput?.evidenceHash !== device.inputEvidenceHash;
           })) {
-          return { code: "INVALID_PLAN", message: "Run plan、记录目标或设备选择无效" };
+          return { code: "INVALID_PLAN", message: "The Run plan, recording target, or device selection is invalid" };
         }
         return null;
       }
       case "arm_recording":
         return this.lifecycle === "preflight_passed"
           ? null
-          : { code: "INVALID_STATE", message: "必须先通过 Recording preflight" };
+          : { code: "INVALID_STATE", message: "Recording Preflight must pass first" };
       case "start_recording":
         return this.lifecycle === "armed"
           ? null
-          : { code: "INVALID_STATE", message: "Recording Arm 尚未由 snapshot 证明" };
+          : { code: "INVALID_STATE", message: "Recording Arm is not yet proven by a snapshot" };
+      case "pause_recording":
+        return this.lifecycle === "recording" && !this.recordingPaused
+          ? null
+          : { code: "INVALID_STATE", message: "Only an active, unpaused mock recording can be paused" };
+      case "resume_recording":
+        return this.lifecycle === "recording" && this.recordingPaused
+          ? null
+          : { code: "INVALID_STATE", message: "Only a paused mock recording can be resumed" };
       case "stop_recording":
-        return this.lifecycle === "recording" ? null : { code: "INVALID_STATE", message: "当前没有 recording Run" };
+        return this.lifecycle === "recording" ? null : { code: "INVALID_STATE", message: "There is no recording Run" };
       case "recover_run":
         return this.lifecycle === "recovery_required"
           && !this.durabilityFailure
           && !this.integrityFailed
           ? null
-          : { code: "RECOVERY_BLOCKED", message: "只有可恢复的 durability fault 可 Recover；source coverage fault 必须确认失败" };
+          : { code: "RECOVERY_BLOCKED", message: "Recover applies only to a recoverable durability fault; a source-coverage fault must be acknowledged as failed" };
       case "acknowledge_failed_run":
-        return this.lifecycle === "recovery_required" ? null : { code: "INVALID_STATE", message: "没有需要确认的失败 Run" };
+        return this.lifecycle === "recovery_required" ? null : { code: "INVALID_STATE", message: "There is no failed Run to acknowledge" };
     }
   }
 
@@ -1069,6 +1107,8 @@ export class MockAcquireAdapter implements AcquireAdapter {
       case "preflight": return "preflighting";
       case "arm_recording": return "arm_requested";
       case "start_recording": return "start_requested";
+      case "pause_recording":
+      case "resume_recording": return "recording";
       case "stop_recording": return "stop_requested";
       case "recover_run": return "finalizing";
       case "acknowledge_failed_run": return "connected_idle";
@@ -1136,11 +1176,23 @@ export class MockAcquireAdapter implements AcquireAdapter {
         steps.push(() => this.setLifecycle("armed"));
         break;
       case "start_recording":
-        steps.push(() => this.setLifecycle("start_requested"));
+        steps.push(() => {
+          this.recordingPaused = false;
+          this.setLifecycle("start_requested");
+        });
         steps.push(() => this.setLifecycle("recording"));
         break;
+      case "pause_recording":
+        steps.push(() => this.setRecordingPaused(true));
+        break;
+      case "resume_recording":
+        steps.push(() => this.setRecordingPaused(false));
+        break;
       case "stop_recording":
-        steps.push(() => this.setLifecycle("stop_requested"));
+        steps.push(() => {
+          this.recordingPaused = false;
+          this.setLifecycle("stop_requested");
+        });
         steps.push(() => this.setLifecycle("recording_stopped"));
         steps.push(() => this.setLifecycle("finalizing"));
         steps.push(() => this.setLifecycle(this.durabilityFailure ? "recovery_required" : "finalized"));
@@ -1192,6 +1244,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
     this.runEpoch = null;
     this.recordingTarget = null;
     this.selectedPodKeys = [];
+    this.recordingPaused = false;
     this.faults = [];
     this.integrityFailed = false;
     this.durabilityFailure = false;
@@ -1203,6 +1256,32 @@ export class MockAcquireAdapter implements AcquireAdapter {
   private setPreviewState(next: PreviewSessionState, podKey?: PodKey): void {
     this.previewState = next;
     this.preview.setActive(next === "live" && this.controlConnection === "connected", podKey);
+    this.publish();
+  }
+
+  private setRecordingPaused(paused: boolean): void {
+    this.recordingPaused = paused;
+    const now = this.now();
+    this.setSlot(
+      "acquisition",
+      paused ? "idle" : "active",
+      paused
+        ? "Synthetic recording paused by the operator; the intentional gap remains part of the Run record"
+        : "Synthetic acquisition resumed after an operator pause",
+      paused ? null : 0n,
+      now,
+    );
+    this.setSlot(
+      "durability",
+      "active",
+      paused
+        ? "Mock journal remains open while source writes are paused"
+        : "Mock journal is accumulating after resume; not yet durable",
+      null,
+      now,
+    );
+    this.runReceiptSequence += this.runId === null ? 0n : 1n;
+    this.preview.refresh();
     this.publish();
   }
 
@@ -1318,7 +1397,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
       lfp_preview: item("lfp_preview", "available", "mock", "MOCK_SYNTHETIC_COMPONENT", "Synthetic 8 Hz LFP truth-component sampled extrema; production LFP DSP is not connected"),
       spike_preview: item("spike_preview", "available", "mock", "MOCK_SYNTHETIC_ORACLE", "Mock waveforms; detector unavailable"),
       fault_injection: item("fault_injection", "available", "mock", "MOCK_ONLY", "Mock-only fault controller"),
-      ft601_direct: item("ft601_direct", "unavailable", "hardware", "NO_ADMISSION_RECEIPT", "FT601/D3XX hardware is unavailable"),
+      ft601_direct: item("ft601_direct", "unavailable", "hardware", "NO_ADMISSION_RECEIPT", "FT600/D3XX hardware is unavailable"),
       aggregator_10gbe: item("aggregator_10gbe", "unavailable", "hardware", "API_NOT_FROZEN", "Aggregator discovery/control/stream is unavailable"),
       rhs_acquisition: item("rhs_acquisition", "qualification_required", "hardware", "HIL_REQUIRED", "RHS acquisition requires hardware qualification"),
       nwb_materialization: item("nwb_materialization", "qualification_required", "software", "PRODUCTION_GATE_OPEN", "NWB production materialization is not qualified"),
@@ -1476,8 +1555,11 @@ export class MockAcquireAdapter implements AcquireAdapter {
     const selected = this.selectedPodKeys.includes(key);
     const gapFault = selected && this.faults.some((fault) => fault.code === "counter_gap" && fault.latched);
     const recording = selected && ["recording", "stop_requested"].includes(this.lifecycle);
-    const channelLayoutId = `MOCK-LINEAR-${this.neuralChannelCount}`;
-    const inputConfigurationHash = this.syntheticModel.inputConfigurationHash(
+    const nwbDerived = this.previewModel.sourceKind === "nwb-derived-reconstruction";
+    const channelLayoutId = nwbDerived
+      ? `NWB-DERIVED-LINEAR-${this.neuralChannelCount}`
+      : `MOCK-LINEAR-${this.neuralChannelCount}`;
+    const inputConfigurationHash = this.previewModel.inputConfigurationHash(
       this.neuralChannelCount,
       channelLayoutId,
     );
@@ -1492,20 +1574,24 @@ export class MockAcquireAdapter implements AcquireAdapter {
       connection,
       neuralInput: {
         headstageId: `MOCK-HS-${key}`,
-        profileId: `MOCK-RHD2132X1-${this.neuralChannelCount}CH-30K`,
-        profileLabel: this.neuralChannelCount === 32
+        profileId: nwbDerived
+          ? `NWB-DERIVED-DEMO-${this.neuralChannelCount}CH-30K`
+          : `MOCK-RHD2132X1-${this.neuralChannelCount}CH-30K`,
+        profileLabel: nwbDerived
+          ? `NWB-derived ${this.neuralChannelCount}-channel demo reconstruction`
+          : this.neuralChannelCount === 32
           ? "Synthetic RHD2132×1 shape"
           : `Synthetic ${this.neuralChannelCount}-channel fixture`,
         neuralChannelCount: this.neuralChannelCount,
-        sampleRateHz: 30_000,
+        sampleRateHz: this.previewModel.sampleRateHz,
         channelLayoutId,
-        sourceEncoding: "synthetic_generator",
+        sourceEncoding: nwbDerived ? "nwb_waveform_reconstruction" : "synthetic_generator",
         previewValueUnit: "microvolt",
-        microvoltsPerCount: SYNTHETIC_PREVIEW_MICROVOLTS_PER_COUNT,
+        microvoltsPerCount: this.previewModel.previewMicrovoltsPerCount,
         zeroCode: null,
         status: "available",
         scope: "mock",
-        reasonCode: "MOCK_GENERATOR_UNITS",
+        reasonCode: nwbDerived ? "NWB_WAVEFORM_RECONSTRUCTION_UNITS" : "MOCK_GENERATOR_UNITS",
         descriptorHash: null,
         inventoryHash: null,
         configHash: inputConfigurationHash,
@@ -1613,7 +1699,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
 
   private loadSnapshot(): DaemonLoadSnapshot {
     const sourceActive = this.previewState === "live" || ["recording", "stop_requested"].includes(this.lifecycle);
-    const writerActive = ["recording", "stop_requested"].includes(this.lifecycle);
+    const writerActive = ["recording", "stop_requested"].includes(this.lifecycle) && !this.recordingPaused;
     const persistenceBusy = ["recording_stopped", "finalizing", "recovery_required"].includes(this.lifecycle);
     const gapActive = this.faults.some((fault) => fault.code === "counter_gap" && fault.latched);
     return {
@@ -1624,6 +1710,8 @@ export class MockAcquireAdapter implements AcquireAdapter {
         ? Math.max(1, writerActive ? this.selectedPodKeys.length : 1) * this.neuralChannelCount * 30_000 * 2
         : 0,
       expectedBytesPerSecond: this.occupiedPodCount * this.neuralChannelCount * 30_000 * 2,
+      recordingFileBytes: null,
+      storageFreeBytes: null,
     };
   }
 
@@ -1633,6 +1721,7 @@ export class MockAcquireAdapter implements AcquireAdapter {
       scope: "mock",
       synthetic: true,
       lifecycle: this.lifecycle,
+      recordingPaused: this.recordingPaused,
       previewState: this.previewState,
       controlConnection: this.controlConnection,
       stale: this.stale,

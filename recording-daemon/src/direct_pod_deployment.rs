@@ -49,6 +49,7 @@ use crate::hardware_service_protocol::{
     HardwareServiceBackend, HardwareServiceSnapshotV1, OperatorRunRequestV1,
 };
 use crate::journal::{inspect_recovery, JournalRecovery};
+use crate::receiver_pod_v2_session::Rps2SessionRuntime;
 
 pub const DIRECT_POD_DEPLOYMENT_POLICY_SCHEMA: &str = "forge.direct-pod-deployment-policy.v4";
 const CONTROL_MAGIC: &[u8; 8] = b"FGRCTL01";
@@ -513,7 +514,7 @@ impl VerifiedDirectPodDeploymentPolicy {
             D3xxLibraryPolicy::Absolute(path) => D3xxLibrary::load_absolute(path)?,
         };
         let (mut device, configuration, descriptors) =
-            library.open_admitted_ft601(&self.admission)?;
+            library.open_admitted_ft600(&self.admission)?;
         device.prepare_duplex_pipes(self.stream_pipe_bytes, self.pipe_timeout_ms)?;
         let plan_provider = self.run_plan_provider();
         let protected_preflight = DirectPodProtectedPreflightV1::new(
@@ -537,6 +538,26 @@ impl VerifiedDirectPodDeploymentPolicy {
             library_sha256: library.library_sha256(),
             policy_file_sha256: self.policy_file_sha256,
         })
+    }
+
+    /// Opens the exact admitted FT600 transport for the V2 RPS2 session
+    /// lifecycle.  This deliberately does not start the historical M0
+    /// capability bootstrap: a V2 Pod consumes RPS2 frames rather than its
+    /// old low-speed control wire.
+    ///
+    /// The caller must establish `BEGIN` with the current admitted startup
+    /// ticket before issuing experiment commands.  This is still a software
+    /// path only; successful construction does not provide USB/HIL evidence.
+    pub fn open_d3xx_rps2_session(&self) -> io::Result<Rps2SessionRuntime<D3xxDevice>> {
+        self.admission.require_valid_at(current_unix_ns()?)?;
+        let library = match &self.d3xx_library {
+            D3xxLibraryPolicy::System32 => D3xxLibrary::load_system32()?,
+            D3xxLibraryPolicy::Absolute(path) => D3xxLibrary::load_absolute(path)?,
+        };
+        let (mut device, _configuration, _descriptors) =
+            library.open_admitted_ft600(&self.admission)?;
+        device.prepare_duplex_pipes(self.stream_pipe_bytes, self.pipe_timeout_ms)?;
+        Ok(Rps2SessionRuntime::new(device))
     }
 }
 
@@ -2243,8 +2264,8 @@ mod tests {
 
     fn admission_fixture() -> Vec<u8> {
         let mut bytes = Vec::with_capacity(FT601_ADMISSION_RECEIPT_LEN);
-        bytes.extend_from_slice(b"FGRD3A61");
-        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(b"FGRD3A60");
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
         bytes.extend_from_slice(&(FT601_ADMISSION_RECEIPT_LEN as u16).to_le_bytes());
         bytes.extend_from_slice(&crate::d3xx_admission::FT601_PROFILE_BRINGUP_66_MHZ.to_le_bytes());
         bytes.extend_from_slice(&FT601_ADMISSION_CONTRACT_HASH);

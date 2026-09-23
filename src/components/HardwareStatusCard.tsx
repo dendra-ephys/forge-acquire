@@ -30,7 +30,7 @@ export function HardwareStatusCard({
       <header>
         <div>
           <span className="instrument-kicker">DAEMON SNAPSHOT</span>
-          <h2 id="hardware-status-title">证据边界</h2>
+          <h2 id="hardware-status-title">Evidence boundary</h2>
         </div>
         <span className={`snapshot-freshness${stale ? " is-stale" : ""}`}>
           {stale ? "STALE" : connection.toUpperCase()}
@@ -57,9 +57,8 @@ export function HardwareStatusCard({
       </div>
 
       <p className="snapshot-boundary-copy">
-        此卡只渲染 adapter snapshot；不读取 Tauri、named pipe 或 USB，也不由通道形状推测硬件能力。
+        This view renders only the adapter snapshot. It does not read Tauri, named pipes, or USB, and it never infers hardware capability from channel shape.
       </p>
     </section>
   );
 }
-

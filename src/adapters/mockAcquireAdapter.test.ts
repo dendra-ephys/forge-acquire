@@ -12,6 +12,7 @@ import {
   SYNTHETIC_PREVIEW_MICROVOLTS_PER_COUNT,
   SyntheticNeuralModel,
 } from "../core/syntheticNeural";
+import { NwbDerivedDemoModel } from "../core/nwbDerivedDemo";
 
 const TRANSITION_MS = 5;
 const RECORDING_TARGET: RecordingTargetRequest = {
@@ -112,6 +113,24 @@ describe("MockAcquireAdapter", () => {
     });
   });
 
+  it("pauses and resumes a mock recording without ending its Run", async () => {
+    await reachRecording();
+
+    await accept({ type: "pause_recording" }, 1);
+    expect(await adapter.readSnapshot()).toMatchObject({
+      lifecycle: "recording",
+      recordingPaused: true,
+      previewState: "live",
+    });
+
+    await accept({ type: "resume_recording" }, 1);
+    expect(await adapter.readSnapshot()).toMatchObject({
+      lifecycle: "recording",
+      recordingPaused: false,
+      previewState: "live",
+    });
+  });
+
   it("keeps command acceptance separate from the complete lifecycle snapshot sequence", async () => {
     const states: Array<{ lifecycle: AcquireLifecycleState; previewState: PreviewSessionState }> = [];
     adapter.subscribeSnapshots(({ lifecycle, previewState }) => states.push({ lifecycle, previewState }));
@@ -194,6 +213,8 @@ describe("MockAcquireAdapter", () => {
       sourceBufferPercent: 11,
       writerQueuePercent: 18,
       controlLoadPercent: 24,
+      recordingFileBytes: null,
+      storageFreeBytes: null,
     });
 
     const frameBeforeStop = adapter.previewSource.getLatest();
@@ -719,6 +740,10 @@ describe("MockAcquireAdapter", () => {
     expect(spike.channelActivity.map((channel) => channel.channel)).toEqual(
       Array.from({ length: 32 }, (_, channel) => channel),
     );
+    expect(spike.channelActivity.every((channel) => channel.recentWaveforms.length <= 3)).toBe(true);
+    expect(spike.channelActivity.every((channel) => channel.recentWaveforms.every(
+      (waveform) => waveform.length === 11,
+    ))).toBe(true);
     expect(spike.podObservedEventCount).toBe(
       spike.channelActivity.reduce((sum, channel) => sum + channel.observedEventCount, 0),
     );
@@ -923,6 +948,60 @@ describe("MockAcquireAdapter", () => {
         containsEventWaveformSnippets: frame.encoding === "spike_preview_v3",
       });
       visit(frame);
+    }
+  });
+
+  it("authors an explicitly NWB-derived 16-channel browser demo without changing canonical defaults", async () => {
+    const model = new NwbDerivedDemoModel();
+    const derived = new MockAcquireAdapter({
+      connectedPodCount: 1,
+      transitionDelayMs: TRANSITION_MS,
+      previewIntervalMs: 1_000,
+      previewModel: model,
+      now: () => 508_000,
+    });
+    try {
+      await derived.execute({ type: "connect" });
+      await vi.advanceTimersByTimeAsync(TRANSITION_MS);
+      const connected = await derived.readSnapshot();
+      const input = connected.topology.directPods[0]?.neuralInput;
+      expect(input).toMatchObject({
+        neuralChannelCount: 16,
+        sampleRateHz: 30_000,
+        sourceEncoding: "nwb_waveform_reconstruction",
+        previewValueUnit: "microvolt",
+        microvoltsPerCount: 0.125,
+        reasonCode: "NWB_WAVEFORM_RECONSTRUCTION_UNITS",
+      });
+      derived.previewSource.setRequest({
+        podKey: "MOCK-DIRECT-01",
+        signalKind: "spike",
+        windowSeconds: 1,
+        channelStart: 0,
+        channelCount: 8,
+        selectedChannel: 2,
+      });
+      await derived.execute({
+        type: "start_preview",
+        podKey: "MOCK-DIRECT-01",
+        topologyEvidenceHash: connected.topology.evidenceHash,
+      });
+      await vi.advanceTimersByTimeAsync(TRANSITION_MS * 2);
+      const frame = derived.previewSource.getLatest();
+      if (frame?.encoding !== "spike_preview_v3") throw new Error("expected NWB spike preview");
+      expect(frame).toMatchObject({
+        inputChannelCount: 16,
+        valueUnitReasonCode: "NWB_WAVEFORM_RECONSTRUCTION_UNITS",
+        waveformSampleRateHz: 30_000,
+        processing: {
+          algorithmId: "forge.mock.nwb-derived-spike-preview.v1",
+          configHash: model.scenarioHash,
+        },
+      });
+      expect(frame.channelActivity).toHaveLength(16);
+      expect(frame.selectedChannelWaveforms.events.every((event) => event.values.length === 32)).toBe(true);
+    } finally {
+      derived.dispose();
     }
   });
 

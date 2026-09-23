@@ -39,7 +39,7 @@ export function SignalViewTabs({ options, selected, onSelect }: SignalViewTabsPr
   };
 
   return (
-    <div className="signal-view-tabs" role="tablist" aria-label="信号预览类型">
+    <div className="signal-view-tabs" role="tablist" aria-label="Signal preview type">
       {options.map((option) => {
         const active = selected === option.id;
         const available = option.status === "available";
@@ -64,6 +64,17 @@ export function SignalViewTabs({ options, selected, onSelect }: SignalViewTabsPr
           </button>
         );
       })}
+      <button
+        id="signal-tab-electrochemical"
+        type="button"
+        role="tab"
+        aria-selected="false"
+        aria-disabled="true"
+        data-tooltip="Electrochemical channel · unavailable"
+        disabled
+      >
+        <strong>E-CHEM</strong>
+      </button>
     </div>
   );
 }

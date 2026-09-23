@@ -78,40 +78,40 @@ function presentHash(value: string | null): boolean {
 }
 
 function evaluateRecordingPath(path: PathReleaseEvidence): string[] {
-  const label = path.path === "direct_d3xx" ? "直连" : "Aggregator";
+  const label = path.path === "direct_d3xx" ? "Direct" : "Aggregator";
   const blockers: string[] = [];
   if (path.acquisitionDurationSeconds < REQUIRED_RUN_SECONDS) {
-    blockers.push(`${label}尚未通过24小时连续采集`);
+    blockers.push(`${label} path has not passed 24-hour continuous acquisition`);
   }
   if (path.sustainedInputBytesPerSecond < PLANNED_SYSTEM_BYTES_PER_SECOND) {
-    blockers.push(`${label}尚未通过126.72 MB/s正常负载`);
+    blockers.push(`${label} path has not passed the 126.72 MB/s nominal load`);
   }
   if (path.stressInputBytesPerSecond < STRESS_SYSTEM_BYTES_PER_SECOND) {
-    blockers.push(`${label}尚未通过190.08 MB/s压力负载`);
+    blockers.push(`${label} path has not passed the 190.08 MB/s stress load`);
   }
   if (!path.concurrentJournalAndNwbPassed) {
-    blockers.push(`${label}尚未通过journal与未压缩NWB并行写入`);
+    blockers.push(`${label} path has not passed concurrent journal and uncompressed NWB writing`);
   }
   if (!path.reconciledWithoutUnexplainedGap) {
-    blockers.push(`${label}计数器、CRC与NWB尚未完成无未解释缺口对账`);
+    blockers.push(`${label} counters, CRC, and NWB have not reconciled without unexplained gaps`);
   }
   return blockers;
 }
 
 function evaluateClosedLoopPath(path: PathReleaseEvidence): string[] {
-  const label = path.path === "direct_d3xx" ? "直连" : "Aggregator";
+  const label = path.path === "direct_d3xx" ? "Direct" : "Aggregator";
   const blockers: string[] = [];
   if (path.stimulusTrials < REQUIRED_STIM_TRIALS_PER_PATH) {
-    blockers.push(`${label}dummy-load刺激少于10^6次`);
+    blockers.push(`${label} dummy-load stimulation count is below 10^6`);
   }
-  if (path.duplicateStimuli !== 0) blockers.push(`${label}存在重复刺激`);
-  if (path.executedWithoutReceipt !== 0) blockers.push(`${label}存在无回执执行`);
-  if (path.latePhysicalStimuli !== 0) blockers.push(`${label}存在逾期物理刺激`);
+  if (path.duplicateStimuli !== 0) blockers.push(`${label} path has duplicate stimuli`);
+  if (path.executedWithoutReceipt !== 0) blockers.push(`${label} path has executions without receipts`);
+  if (path.latePhysicalStimuli !== 0) blockers.push(`${label} path has late physical stimuli`);
   if (path.spikePhysicalLatencyP99Ms === null || path.spikePhysicalLatencyP99Ms > 20) {
-    blockers.push(`${label}Spike物理闭环p99未证明≤20 ms`);
+    blockers.push(`${label} physical spike closed-loop p99 ≤20 ms is unproven`);
   }
   if (path.lfpPhysicalLatencyP99Ms === null || path.lfpPhysicalLatencyP99Ms > 100) {
-    blockers.push(`${label}LFP物理闭环p99未证明≤100 ms`);
+    blockers.push(`${label} physical LFP closed-loop p99 ≤100 ms is unproven`);
   }
   return blockers;
 }
@@ -123,28 +123,28 @@ function evaluateClosedLoopPath(path: PathReleaseEvidence): string[] {
 export function evaluateReleaseEvidence(evidence: ReleaseEvidenceV1): ReleaseEvaluationV1 {
   const recordingBlockers: string[] = [];
   for (const [name, value] of [
-    ["协议契约", evidence.protocolContractHash],
-    ["软件build", evidence.softwareBuildHash],
-    ["硬件build", evidence.hardwareBuildHash],
-    ["存储profile", evidence.storageProfileHash],
+    ["protocol contract", evidence.protocolContractHash],
+    ["software build", evidence.softwareBuildHash],
+    ["hardware build", evidence.hardwareBuildHash],
+    ["storage profile", evidence.storageProfileHash],
   ] as const) {
-    if (!presentHash(value)) recordingBlockers.push(`缺少有效${name} hash`);
+    if (!presentHash(value)) recordingBlockers.push(`Valid ${name} hash is missing`);
   }
-  if (evidence.guiKillCount < 1_000) recordingBlockers.push("GUI kill测试少于1000次");
-  if (evidence.nwbWorkerKillCount < 100) recordingBlockers.push("NWB worker kill测试少于100次");
+  if (evidence.guiKillCount < 1_000) recordingBlockers.push("GUI kill test count is below 1,000");
+  if (evidence.nwbWorkerKillCount < 100) recordingBlockers.push("NWB worker kill test count is below 100");
   if (evidence.algorithmWorkerKillCount < 100) {
-    recordingBlockers.push("算法worker kill测试少于100次");
+    recordingBlockers.push("Algorithm-worker kill test count is below 100");
   }
   for (const fault of REQUIRED_INJECTED_FAULTS) {
     if (!evidence.injectedFaultsPassed.includes(fault)) {
-      recordingBlockers.push(`故障注入未通过：${fault}`);
+      recordingBlockers.push(`Fault injection did not pass: ${fault}`);
     }
   }
   recordingBlockers.push(...evaluateRecordingPath(evidence.direct));
   recordingBlockers.push(...evaluateRecordingPath(evidence.aggregator));
-  if (evidence.qualifiedOperators < 5) recordingBlockers.push("目标实验人员可用性验证少于5人");
+  if (evidence.qualifiedOperators < 5) recordingBlockers.push("Fewer than 5 target operators completed usability qualification");
   if (evidence.stopEqualsSavedMisunderstandings !== 0) {
-    recordingBlockers.push("仍有人误解停止采集等于保存完成");
+    recordingBlockers.push("An operator still confuses stopping acquisition with save completion");
   }
 
   const closedLoopBlockers = [

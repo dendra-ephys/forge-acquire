@@ -557,7 +557,7 @@ mod tests {
     use crate::dhl_identity_catalog::{DhlExpectedComponentKind, DhlIdentity};
 
     const IDL: &str = include_str!("../schema/forge_direct_pod_dhl_identity_capsule_v1.idl");
-    const GOLDEN: &str = include_str!("../../protocol/dhl/golden/dhl_v1_vectors.json");
+    const GOLDEN: &str = include_str!("../../../protocol/golden/dhl_v1_vectors.json");
 
     #[test]
     fn idl_lf_hash_is_frozen_constant() {

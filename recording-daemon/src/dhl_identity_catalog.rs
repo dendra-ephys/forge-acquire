@@ -13,10 +13,10 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 const COMPONENT_INVENTORY_PROFILES_JSON: &str =
-    include_str!("../../contracts/headstage/firmware/component_inventory_profiles.json");
-const CHANNEL_MAPS_V1_JSON: &str = include_str!("../../protocol/dhl/channel_maps_v1.json");
+    include_str!("../../../headstage/firmware/component_inventory_profiles.json");
+const CHANNEL_MAPS_V1_JSON: &str = include_str!("../../../protocol/channel_maps_v1.json");
 const HEADSTAGE_PRODUCT_MATRIX_JSON: &str =
-    include_str!("../../contracts/headstage/docs/headstage_product_matrix_v1.json");
+    include_str!("../../../headstage/docs/headstage_product_matrix_v1.json");
 
 /// Domain separation for the exact three checked-in catalog source files.
 ///
@@ -31,7 +31,7 @@ const CATALOG_SOURCE_PRODUCT_MATRIX_LABEL: &[u8] = b"headstage_product_matrix_v1
 /// reviewed change to one of the three authoritative source files and its
 /// protected deployment policy.
 pub const DHL_IDENTITY_CATALOG_SOURCE_BUNDLE_SHA256_HEX: &str =
-    "8493dca2170e66e0da3dcca2aa0198cd0471c79c6b93bf3c053cc135de99ee4c";
+    "70ea69199e9ee5b8850c3261432b3b27cd3b1f7b764b13528845230ae08a1ea0";
 
 /// SHA-256 evidence for the three exact `include_str!` source byte strings.
 ///
@@ -244,9 +244,30 @@ struct ComponentInventoryProfiles {
     contract: String,
     channel_contract: String,
     instance_order: String,
+    vstim_profile_contract: VstimProfileContract,
     profiles: Vec<BaseProfile>,
     assemblies: Vec<Assembly>,
     optional_components: Vec<OptionalComponent>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VstimProfileContract {
+    none: u8,
+    bipolar_7v: u8,
+    bipolar_22v5: u8,
+    reserved_unassigned: Vec<VstimProfile>,
+    admission: String,
+}
+
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
+enum VstimProfile {
+    #[serde(rename = "none")]
+    None,
+    #[serde(rename = "bipolar_7v")]
+    Bipolar7v,
+    #[serde(rename = "bipolar_22v5")]
+    Bipolar22v5,
 }
 
 #[derive(Deserialize)]
@@ -274,6 +295,7 @@ struct Assembly {
     name: String,
     board_profile_id: u16,
     descriptor_feature_flags: u16,
+    vstim_profile: VstimProfile,
     expected_instance_ids: Vec<u16>,
     #[serde(default)]
     status: Option<AssemblyStatus>,
@@ -389,6 +411,18 @@ fn validate_catalog(
     {
         return Err(DhlIdentityCatalogError::new(
             "component inventory profiles has an unsupported schema or contract".into(),
+        ));
+    }
+    let vstim = &inventory.vstim_profile_contract;
+    if vstim.none != 0
+        || vstim.bipolar_7v != 1
+        || vstim.bipolar_22v5 != 2
+        || vstim.reserved_unassigned.as_slice() != [VstimProfile::Bipolar22v5]
+        || vstim.admission
+            != "exact assembly name, board profile, and admitted manifest; descriptor stimulation bit alone is insufficient"
+    {
+        return Err(DhlIdentityCatalogError::new(
+            "component inventory VSTIM profile contract is unsupported".into(),
         ));
     }
     if channel_maps.schema_version != 1
@@ -745,6 +779,11 @@ fn validate_product_matrix(
         let expected_neural = expected_neural?;
         let has_echem = assembly.descriptor_feature_flags & FEATURE_ELECTROCHEM != 0;
         let has_rhs = assembly.descriptor_feature_flags & FEATURE_RHS_STIMULATION != 0;
+        let expected_vstim_profile = if has_rhs {
+            VstimProfile::Bipolar7v
+        } else {
+            VstimProfile::None
+        };
         if product
             .neural
             .iter()
@@ -754,6 +793,7 @@ fn validate_product_matrix(
             || product.channels != total_channels(&base.components, &base.name)?
             || product.echem != has_echem
             || product.stim != has_rhs
+            || assembly.vstim_profile != expected_vstim_profile
             || assembly.status.is_some()
         {
             return Err(DhlIdentityCatalogError::new(format!(
@@ -1718,8 +1758,8 @@ mod tests {
         assert!(error.contains("three explicitly graph-closed"), "{error}");
 
         let bad_option = COMPONENT_INVENTORY_PROFILES_JSON.replacen(
-            "\"name\": \"rhd2132x1_imu\", \"board_profile_id\": 1, \"descriptor_feature_flags\": 2, \"expected_instance_ids\": [0, 100]",
-            "\"name\": \"rhd2132x1_imu\", \"board_profile_id\": 1, \"descriptor_feature_flags\": 2, \"expected_instance_ids\": [0, 101]",
+            "\"name\": \"rhd2132x1_imu\", \"board_profile_id\": 1, \"descriptor_feature_flags\": 2, \"vstim_profile\": \"none\", \"expected_instance_ids\": [0, 100]",
+            "\"name\": \"rhd2132x1_imu\", \"board_profile_id\": 1, \"descriptor_feature_flags\": 2, \"vstim_profile\": \"none\", \"expected_instance_ids\": [0, 101]",
             1,
         );
         let error = DhlIdentityCatalog::from_json(

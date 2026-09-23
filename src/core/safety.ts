@@ -74,55 +74,55 @@ export function evaluateStimArmRequest(
   add(
     stimulation.state !== "disarmed",
     "STIMULATION_UNAVAILABLE",
-    "SafetyArbiter 尚未报告可请求 Arm 的 disarmed 状态",
+    "SafetyArbiter has not reported a disarmed state eligible for an Arm request",
   );
-  add(machine.acquisition !== "streaming", "RUN_NOT_STREAMING", "采集尚未处于有效 streaming Run");
-  add(machine.integrity !== "clean", "RUN_INTEGRITY_NOT_CLEAN", "当前 Run 完整性不是 clean");
-  add(["waiting", "lost"].includes(machine.sync), "SYNC_NOT_READY", "硬件同步正在等待或已丢失");
+  add(machine.acquisition !== "streaming", "RUN_NOT_STREAMING", "Acquisition is not in a valid streaming Run");
+  add(machine.integrity !== "clean", "RUN_INTEGRITY_NOT_CLEAN", "Current Run integrity is not clean");
+  add(["waiting", "lost"].includes(machine.sync), "SYNC_NOT_READY", "Hardware synchronization is waiting or lost");
   const stimProfile = stimulation.headstageProfileId === null
     ? null
     : headstageProfile(stimulation.headstageProfileId);
   add(
     stimProfile === null || !isHostV1StimProfileEligible(stimProfile),
     "HEADSTAGE_PROFILE_NOT_STIM_ADMITTED",
-    "Headstage 电气图未闭合或目录身份未获得 Host v1 的 16 通道刺激请求能力",
+    "The Headstage schematic is incomplete or its catalog identity lacks Host v1 16-channel stimulation-request capability",
   );
-  add(stimulation.rhsChannelCount !== 16, "RHS_CAPABILITY_MISSING", "设备未证明 RHS2116 16 通道能力");
-  add(stimulation.capabilityHash === null, "CAPABILITY_HASH_MISSING", "缺少能力描述 hash");
+  add(stimulation.rhsChannelCount !== 16, "RHS_CAPABILITY_MISSING", "The device has not proven RHS2116 16-channel capability");
+  add(stimulation.capabilityHash === null, "CAPABILITY_HASH_MISSING", "Capability descriptor hash is missing");
   add(
     stimulation.safetyProfileHash === null || stimulation.safetyProfileApprovalId === null,
     "SAFETY_PROFILE_UNAPPROVED",
-    "缺少获批 Safety Profile hash/approval",
+    "Approved Safety Profile hash or approval is missing",
   );
-  add(stimulation.templateSetHash === null, "TEMPLATE_HASH_MISSING", "未冻结刺激模板集合 hash");
-  add(stimulation.algorithmBuildHash === null, "ALGORITHM_HASH_MISSING", "未冻结算法 build/config hash");
-  add(stimulation.algorithmConfigHash === null, "CONFIG_HASH_MISSING", "未冻结算法 config hash");
-  add(stimulation.channelMapHash === null, "CHANNEL_MAP_HASH_MISSING", "未冻结通道映射 hash");
+  add(stimulation.templateSetHash === null, "TEMPLATE_HASH_MISSING", "Stimulation template-set hash is not frozen");
+  add(stimulation.algorithmBuildHash === null, "ALGORITHM_HASH_MISSING", "Algorithm build hash is not frozen");
+  add(stimulation.algorithmConfigHash === null, "CONFIG_HASH_MISSING", "Algorithm config hash is not frozen");
+  add(stimulation.channelMapHash === null, "CHANNEL_MAP_HASH_MISSING", "Channel-map hash is not frozen");
   add(
     stimulation.controllerWorkerBuildHash === null,
     "WORKER_BUILD_HASH_MISSING",
-    "未冻结控制 worker build hash",
+    "Control-worker build hash is not frozen",
   );
   add(
     stimulation.frozenContextReceiptHash === null,
     "FROZEN_CONTEXT_RECEIPT_MISSING",
-    "缺少相互绑定的 frozen-context 收据",
+    "Mutually bound frozen-context receipts are missing",
   );
-  add(analysis.controllerTokenOwner === "none", "CONTROL_TOKEN_MISSING", "没有唯一闭环控制令牌");
-  add(stimulation.physicalEnable !== "closed", "PHYSICAL_ENABLE_OPEN", "实体 ENABLE 未闭合");
-  add(stimulation.emergencyStopHealthy !== true, "EMERGENCY_STOP_UNHEALTHY", "急停回路未证明健康");
-  add(stimulation.watchdogHealthy !== true, "WATCHDOG_UNHEALTHY", "独立看门狗未证明健康");
-  add(stimulation.complianceHealthy !== true, "COMPLIANCE_UNHEALTHY", "compliance 预检未通过");
-  add(stimulation.hardwareClockLocked !== true, "HARDWARE_CLOCK_UNLOCKED", "硬件时钟未证明锁定");
+  add(analysis.controllerTokenOwner === "none", "CONTROL_TOKEN_MISSING", "There is no unique closed-loop control token");
+  add(stimulation.physicalEnable !== "closed", "PHYSICAL_ENABLE_OPEN", "Physical ENABLE is open");
+  add(stimulation.emergencyStopHealthy !== true, "EMERGENCY_STOP_UNHEALTHY", "Emergency-stop circuit health is unproven");
+  add(stimulation.watchdogHealthy !== true, "WATCHDOG_UNHEALTHY", "Independent watchdog health is unproven");
+  add(stimulation.complianceHealthy !== true, "COMPLIANCE_UNHEALTHY", "Compliance preflight has not passed");
+  add(stimulation.hardwareClockLocked !== true, "HARDWARE_CLOCK_UNLOCKED", "Hardware clock lock is unproven");
   add(
     stimulation.deadlineBudgetMs === null || stimulation.deadlineBudgetMs <= 0,
     "DEADLINE_BUDGET_MISSING",
-    "没有有效的硬件时基 deadline 预算",
+    "There is no valid hardware-timebase deadline budget",
   );
   add(
     !stimulation.closedLoopReleaseQualified || stimulation.qualificationReceiptHash === null,
     "RELEASE_QUALIFICATION_MISSING",
-    "直连/Aggregator HIL 与 10⁶ 次 dummy-load 发布收据尚未齐备",
+    "Direct and Aggregator HIL plus 10^6 dummy-load release receipts are incomplete",
   );
 
   return { eligibleToRequest: blockers.length === 0, blockers };

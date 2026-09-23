@@ -57,7 +57,7 @@ function hasValidNwbArtifact(receipt: RunReceipt | null): boolean {
 function failedSummary(detail: string): RunOutputSummary {
   return {
     state: "failed",
-    label: "记录失败 · 需要恢复",
+    label: "Recording failed · recovery required",
     detail,
     phaseLabel: "RECOVERY REQUIRED",
     compactLabel: "FAIL",
@@ -87,7 +87,7 @@ export function deriveRunOutput(
     return failedSummary(
       firstFaultDetail(evidence)
       ?? runReceipt?.faults.find((fault) => fault.latched && fault.code !== "control_pipe_loss")?.message
-      ?? "当前 Run 没有满足完整记录与最终 NWB 输出条件。",
+      ?? "The current Run does not meet the requirements for a complete recording and final NWB output.",
     );
   }
 
@@ -98,10 +98,10 @@ export function deriveRunOutput(
   ) {
     return {
       state: "saving",
-      label: scope === "mock" ? "正在结束模拟流程" : "正在结束并生成 NWB",
+      label: scope === "mock" ? "Ending simulation" : "Ending and generating NWB",
       detail: scope === "mock"
-        ? "等待模拟结束回执。"
-        : "正在停止输入、排空原始 journal，并生成、验证和发布 NWB。",
+        ? "Waiting for the simulation completion receipt."
+        : "Stopping input, draining the raw journal, and generating, validating, and publishing NWB.",
       phaseLabel: scope === "mock" ? "ENDING SIMULATION" : "ENDING / NWB",
       compactLabel: "SAVE",
       urgent: false,
@@ -111,8 +111,8 @@ export function deriveRunOutput(
   if (lifecycle === "start_requested") {
     return {
       state: "recording",
-      label: "正在启动记录",
-      detail: "等待 adapter snapshot 确认数据源与 writer 已进入 Recording。",
+      label: "Starting recording",
+      detail: "Waiting for the adapter snapshot to confirm that the source and writer entered Recording.",
       phaseLabel: "START REQUESTED",
       compactLabel: "START",
       urgent: false,
@@ -122,8 +122,8 @@ export function deriveRunOutput(
   if (lifecycle === "recording") {
     return {
       state: "recording",
-      label: "正在记录",
-      detail: scope === "mock" ? "模拟数据流" : "最终 NWB 将在结束记录时生成并验证。",
+      label: "Recording",
+      detail: scope === "mock" ? "Synthetic data stream" : "The final NWB will be generated and validated when recording ends.",
       phaseLabel: "RECORDING",
       compactLabel: "REC",
       urgent: false,
@@ -134,8 +134,8 @@ export function deriveRunOutput(
     if (scope === "mock") {
       return {
         state: "mock_complete",
-        label: "模拟流程完成",
-        detail: "未创建记录文件，也未生成 NWB。",
+        label: "Simulation complete",
+        detail: "No recording file or NWB was created.",
         phaseLabel: "SIMULATION COMPLETE",
         compactLabel: "MOCK",
         urgent: false,
@@ -152,8 +152,8 @@ export function deriveRunOutput(
     if (nwbSaved) {
       return {
         state: "nwb_saved",
-        label: "NWB 已保存",
-        detail: `已生成、验证并以新文件发布：${runReceipt?.nwbArtifact?.filePath ?? ""}`,
+        label: "NWB saved",
+        detail: `Generated, validated, and published as a new file: ${runReceipt?.nwbArtifact?.filePath ?? ""}`,
         phaseLabel: "NWB SAVED",
         compactLabel: "SAVED",
         urgent: false,
@@ -163,22 +163,22 @@ export function deriveRunOutput(
     if (coreProven && (receiptStatus === "raw_sealed" || receiptStatus === "finalized")) {
       return {
         state: "raw_retained",
-        label: "原始数据已保留 · NWB 未完成",
+        label: "Raw data retained · NWB incomplete",
         detail: isFault(evidence.nwb)
           ? evidence.nwb.summary
-          : "只确认原始 journal 已封存；尚无最终 NWB 发布回执。",
+          : "Only the sealed raw journal is confirmed; there is no final NWB publication receipt.",
         phaseLabel: "NWB INCOMPLETE",
         compactLabel: "NWB!",
         urgent: true,
       };
     }
 
-    return failedSummary("Run 已结束，但原始记录或最终 NWB 回执不完整。");
+    return failedSummary("The Run ended, but its raw-recording or final-NWB receipt is incomplete.");
   }
 
   return {
     state: "idle",
-    label: "尚未记录",
+    label: "Not recorded",
     detail: "",
     phaseLabel: "NO RECORDING",
     compactLabel: "IDLE",

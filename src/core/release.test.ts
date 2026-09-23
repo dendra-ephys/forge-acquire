@@ -59,8 +59,8 @@ describe("Forge release receipt preflight", () => {
     expect(result.recordingReleaseEligible).toBe(true);
     expect(result.closedLoopReleaseEligible).toBe(false);
     expect(result.closedLoopBlockers).toEqual(expect.arrayContaining([
-      expect.stringContaining("无回执"),
-      expect.stringContaining("Spike"),
+      expect.stringContaining("without receipts"),
+      expect.stringContaining("spike"),
     ]));
   });
 

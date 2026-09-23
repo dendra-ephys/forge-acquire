@@ -4,7 +4,9 @@ Status: Host-side migration implemented; physical hardware path unavailable
 
 ## Active hardware facts consumed by software
 
-- Receiver-Pod FPGA: `LFE5UM-25F-8MG285I`.
+- Receiver-Pod checked-in implementation: `LFE5UM-25F-8MG285I`, 128-channel ceiling.
+  `DEC-ARCH-REVA-002` accepts later same-MG285 45F/256 and 85F/512 product targets;
+  no Host or hardware qualification for those variants is claimed here.
 - Headstage→Pod DATA: 1.25-Gbit/s continuous 8b/10b DHL v1.
 - Pod→Headstage CTRL: 20-Mbaud Manchester; ACK returns over DATA.
 - Headstage source timebase: 25 MHz. USB arrival time is never sample time.

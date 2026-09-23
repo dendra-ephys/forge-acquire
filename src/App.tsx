@@ -1,24 +1,23 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity,
-  AlertTriangle,
-  Cable,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  ChevronUp,
-  CircleStop,
-  Clock3,
-  Database,
-  Gauge,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import {
   Maximize2,
   Minimize2,
+  Moon,
+  PanelRightClose,
   PanelRightOpen,
   Pause,
   Play,
-  RadioTower,
-  Signal,
-  Wrench,
+  Sun,
   Waves,
 } from "lucide-react";
 import type {
@@ -30,7 +29,6 @@ import type {
   DaemonSnapshot,
   DeviceIdentitySnapshot,
   DeviceKind,
-  FaultCode,
   PodKey,
   PodSnapshot,
   PodTopologySnapshot,
@@ -38,8 +36,7 @@ import type {
 } from "./adapters/acquireAdapter";
 import { createAcquireRuntime } from "./adapters/acquireRuntime";
 import type { RunDirectoryBrowser, RunDirectoryListing } from "./adapters/runDirectoryBrowser";
-import { FaultRecoveryPanel, type FaultOption } from "./components/FaultRecoveryPanel";
-import { HardwareStatusCard } from "./components/HardwareStatusCard";
+import { InfoHint } from "./components/InfoHint";
 import { LiveTraceSurface, type ChannelDisplayStats } from "./components/LiveTraceSurface";
 import { DeviceNameDialog } from "./components/DeviceNameDialog";
 import { PodRack } from "./components/PodRack";
@@ -49,63 +46,74 @@ import { RunIntegrityRail } from "./components/RunIntegrityRail";
 import { SignalViewTabs, type SignalViewOption } from "./components/SignalViewTabs";
 import { deriveRunOutput } from "./core/runOutputState";
 
+const LOW_STORAGE_THRESHOLD_BYTES = 20_000_000_000;
+
 const PreflightDialog = lazy(async () => {
   const module = await import("./components/PreflightDialog");
   return { default: module.PreflightDialog };
 });
 
+function formatByteCount(bytes: number | null): string {
+  if (bytes === null || !Number.isFinite(bytes) || bytes < 0) return "—";
+  if (bytes < 1_000) return `${Math.round(bytes)} B`;
+  const units = ["KB", "MB", "GB", "TB", "PB"];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1_000)), units.length);
+  const value = bytes / 1_000 ** exponent;
+  return `${value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${units[exponent - 1]}`;
+}
+
 const PHASE_COPY: Record<AcquireLifecycleState, { label: string; detail: string }> = {
   disconnected: {
-    label: "DISCONNECTED",
-    detail: "控制面未连接；没有 active Run receipt。",
+    label: "STARTING",
+    detail: "Waiting for the acquisition service to finish opening the recognized device source.",
   },
   connected_idle: {
-    label: "CONNECTED / IDLE",
-    detail: "Adapter snapshot 新鲜；可先启动 Preview，再设置记录范围并运行 Preflight。",
+    label: "READY",
+    detail: "The recognized device source is ready. Preview remains separate from recording setup.",
   },
   preflighting: {
     label: "PREFLIGHTING",
-    detail: "请求已接受，正在等待独立 preflight snapshot。",
+    detail: "The request was accepted; waiting for an independent preflight snapshot.",
   },
   preflight_passed: {
     label: "PREFLIGHT PASS",
-    detail: "设备身份、输入描述与记录目标已冻结；Recording Arm 尚未请求。",
+    detail: "Device identities, input descriptions, and the recording target are frozen. Arm has not been requested.",
   },
   arm_requested: {
     label: "ARM REQUESTED",
-    detail: "Arm command 已接受；此刻仍不能称为 Armed。",
+    detail: "The Arm command was accepted; the adapter has not confirmed Armed yet.",
   },
   armed: {
     label: "READY TO RECORD",
-    detail: "Adapter snapshot 已确认 Recording Arm；尚未开始记录，Preview 可独立启动或停止。",
+    detail: "The adapter snapshot confirms Armed. Recording has not started; Preview remains independent.",
   },
   start_requested: {
     label: "START REQUESTED",
-    detail: "Start command 已接受；等待 source-confirmed recording snapshot。",
+    detail: "The Start command was accepted; waiting for a source-confirmed recording snapshot.",
   },
   recording: {
     label: "RECORDING",
-    detail: "Writer 正从 adapter-authored Recording source 接收输入；Preview 是独立的有界派生显示，可单独停止。",
+    detail: "The writer is receiving an adapter-authored recording source. Preview is a bounded derivative and can stop independently.",
   },
   stop_requested: {
     label: "ENDING / SAVING",
-    detail: "正在停止输入并排空；Preview 保持独立。",
+    detail: "Stopping input and draining buffers. Preview remains independent.",
   },
   recording_stopped: {
     label: "SAVING · INPUT STOPPED",
-    detail: "输入已停止；正在等待 durability barrier，Preview 可继续。",
+    detail: "Input has stopped. Waiting for the durability barrier; Preview may continue.",
   },
   finalizing: {
     label: "SAVING · SEALING",
-    detail: "正在等待 durability barrier 与 seal receipt。",
+    detail: "Waiting for the durability barrier and seal receipt.",
   },
   finalized: {
     label: "RUN ENDED",
-    detail: "最终结果只接受 adapter 的 NWB 发布回执。",
+    detail: "The final result accepts only the adapter's NWB publication receipt.",
   },
   recovery_required: {
     label: "RECOVERY REQUIRED",
-    detail: "Run 未封存，不能当作完整记录；只执行当前 adapter 明确提供的恢复或失败确认动作。",
+    detail: "The Run is not sealed and is not a complete recording. Only adapter-provided recovery or failure actions are allowed.",
   },
 };
 
@@ -133,10 +141,6 @@ function lifecycleHasArm(lifecycle: AcquireLifecycleState): boolean {
   ].includes(lifecycle);
 }
 
-function lifecycleHasStopped(lifecycle: AcquireLifecycleState): boolean {
-  return ["recording_stopped", "finalizing", "finalized", "recovery_required"].includes(lifecycle);
-}
-
 function topologyPods(topology: PodTopologySnapshot): PodSnapshot[] {
   return [
     ...topology.directPods,
@@ -150,6 +154,8 @@ function App() {
   const runDirectoryBrowserRef = useRef<Promise<RunDirectoryBrowser> | null>(null);
   const adapter = runtime.adapter;
   const mountedRef = useRef(false);
+  const autoConnectRequestedRef = useRef(false);
+  const autoStartSyntheticPreviewRef = useRef(false);
   const [capabilities, setCapabilities] = useState<CapabilitySnapshot | null>(null);
   const [snapshot, setSnapshot] = useState<DaemonSnapshot | null>(null);
   const [lastCommand, setLastCommand] = useState<CommandReceipt | null>(null);
@@ -190,14 +196,14 @@ function App() {
   const [gainUv, setGainUv] = useState(200);
   const [windowSeconds, setWindowSeconds] = useState(1);
   const [displayPaused, setDisplayPaused] = useState(false);
-  const [selectedFaultId, setSelectedFaultId] = useState<FaultCode>("counter_gap");
+  const [traceTheme, setTraceTheme] = useState<"dark" | "light">("dark");
   const [podsCollapsed, setPodsCollapsed] = useState(false);
-  const [controlsCollapsed, setControlsCollapsed] = useState(false);
-  const [diagnosticsCollapsed, setDiagnosticsCollapsed] = useState(true);
+  const [podPanelWidth, setPodPanelWidth] = useState(220);
+  const podResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
+  const [controlsCollapsed, setControlsCollapsed] = useState(true);
   const [signalFocusActive, setSignalFocusActive] = useState(false);
   const effectivePodsCollapsed = signalFocusActive || podsCollapsed;
   const effectiveControlsCollapsed = signalFocusActive || controlsCollapsed;
-  const effectiveDiagnosticsCollapsed = signalFocusActive || diagnosticsCollapsed;
   const nwbOutputCapability = capabilities?.capabilities.nwb_materialization ?? null;
   const finalOutputReady = capabilities !== null
     && (capabilities.scope === "mock" || nwbOutputCapability?.status === "available");
@@ -240,6 +246,20 @@ function App() {
     else setBusyAction(null);
     return receipt;
   }, [adapter]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    if (snapshot.controlConnection === "connected") {
+      autoConnectRequestedRef.current = false;
+      return;
+    }
+    if (autoConnectRequestedRef.current || topologyPods(snapshot.topology).length === 0) return;
+    autoConnectRequestedRef.current = true;
+    autoStartSyntheticPreviewRef.current = snapshot.synthetic;
+    void issue({ type: "connect" }).then((receipt) => {
+      if (!receipt.accepted) autoConnectRequestedRef.current = false;
+    });
+  }, [issue, snapshot]);
 
   const selectablePods = useMemo(
     () => snapshot ? topologyPods(snapshot.topology).filter((pod) => pod.selectable) : [],
@@ -403,6 +423,16 @@ function App() {
     });
   }, [issue, selectedPodKey, snapshot]);
 
+  useEffect(() => {
+    if (!autoStartSyntheticPreviewRef.current
+        || snapshot?.synthetic !== true
+        || snapshot.controlConnection !== "connected"
+        || snapshot.previewState !== "stopped"
+        || selectedPodKey === null) return;
+    autoStartSyntheticPreviewRef.current = false;
+    handleStartPreview();
+  }, [handleStartPreview, selectedPodKey, snapshot]);
+
   const handleRequestRename = useCallback((kind: DeviceKind, identity: DeviceIdentitySnapshot) => {
     setRenameError(null);
     setRenameTarget({ kind, identity });
@@ -423,27 +453,6 @@ function App() {
     if (receipt.accepted) setRenameTarget(null);
     else setRenameError(`${receipt.reasonCode} · ${receipt.message}`);
   }, [adapter, renameTarget]);
-
-  const handleInjectFault = useCallback(async () => {
-    if (runtime.diagnostics === null) return;
-    setBusyAction("inject_fault");
-    if (selectedFaultId === "counter_gap") {
-      await runtime.diagnostics.inject({ type: "counter_gap", missingSamples: 64 });
-    } else if (selectedFaultId === "control_pipe_loss") {
-      await runtime.diagnostics.inject({ type: "control_pipe_loss" });
-    } else {
-      await runtime.diagnostics.inject({ type: "durability_failure", reason: "Mock stable-media barrier timeout" });
-    }
-    setBusyAction(null);
-  }, [runtime.diagnostics, selectedFaultId]);
-
-  const handleClearRecoverable = useCallback(async () => {
-    if (!snapshot || runtime.diagnostics === null) return;
-    setBusyAction("clear_faults");
-    const recoverable = snapshot.faults.filter((fault) => fault.latched && fault.recoverable);
-    await Promise.all(recoverable.map((fault) => runtime.diagnostics!.clear(fault.code)));
-    setBusyAction(null);
-  }, [runtime.diagnostics, snapshot]);
 
   useEffect(() => {
     if (!snapshot || preflightOpen || renameTarget !== null) return undefined;
@@ -474,7 +483,7 @@ function App() {
       <div className="app-loading" role="status">
         <Waves size={24} aria-hidden="true" />
         <strong>Forge Acquire</strong>
-        <span>正在读取 adapter capability 与 daemon snapshot…</span>
+        <span>Reading adapter capabilities and daemon snapshot…</span>
       </div>
     );
   }
@@ -486,13 +495,18 @@ function App() {
     snapshot.runReceipt,
     snapshot.scope,
   );
-  const phase = ["finalized", "recovery_required"].includes(snapshot.lifecycle)
-    ? { label: runOutput.phaseLabel, detail: runOutput.detail }
-    : PHASE_COPY[snapshot.lifecycle];
+  const phase = snapshot.recordingPaused
+    ? {
+        label: "RECORDING PAUSED",
+        detail: "The mock recording Run remains open. Resume continues the same Run; End Recording closes and saves it.",
+      }
+    : ["finalized", "recovery_required"].includes(snapshot.lifecycle)
+      ? { label: runOutput.phaseLabel, detail: runOutput.detail }
+      : PHASE_COPY[snapshot.lifecycle];
   const controlSeparated = !connected && snapshot.runId !== null
     && !["finalized", "recovery_required"].includes(snapshot.lifecycle);
   const phaseDetail = controlSeparated
-    ? `控制面已断开；记录数据面仍保持 ${snapshot.lifecycle}，GUI 关闭或断开不会自动产生 Stop/Abort。`
+    ? `The control plane is disconnected while the recording data plane remains ${snapshot.lifecycle}. Closing the UI does not issue Stop or Abort.`
     : snapshot.lifecycle === "recovery_required"
       ? `${snapshot.evidence.acquisition.summary} ${snapshot.evidence.durability.summary}`
       : phase.detail;
@@ -502,52 +516,12 @@ function App() {
     ?? pods[0]
     ?? null;
   const selectedInput = selectedPod?.neuralInput ?? null;
-  const selectedUnitLabel = selectedInput?.previewValueUnit === "adc_count"
-    ? "ADC counts"
-    : selectedInput?.scope === "mock"
-      ? "SYNTHETIC µV"
-      : "µV";
-  const selectedChannelCount = selectedInput?.neuralChannelCount ?? 0;
-  const selectedBankStart = Math.floor(selectedChannel / 8) * 8;
-  const selectedBankCount = Math.max(0, Math.min(8, selectedChannelCount - selectedBankStart));
-  const selectedBankLabel = selectedBankCount > 0
-    ? `CH ${String(selectedBankStart + 1).padStart(3, "0")}–${String(selectedBankStart + selectedBankCount).padStart(3, "0")}`
-    : "NO INPUT";
-
-  const faultOptions: FaultOption[] = [
-    {
-      id: "counter_gap",
-      label: "Counter gap",
-      description: "锁存 source / spike detector coverage FAILED，停止 Preview 并立即退出有效 Recording；不能生成有效保存回执。",
-      enabled: runtime.diagnostics !== null && snapshot.lifecycle === "recording",
-    },
-    {
-      id: "control_pipe_loss",
-      label: "Control pipe loss",
-      description: "仅丢失 GUI 控制连接；独立记录数据面继续且不生成 Stop。",
-      enabled: runtime.diagnostics !== null && connected && snapshot.lifecycle !== "disconnected",
-    },
-    {
-      id: "durability_failure",
-      label: "Durability failure",
-      description: "预设下一次结束并保存的 durability / seal 失败，进入 Recovery Required，不伪造 seal。",
-      enabled: runtime.diagnostics !== null && snapshot.lifecycle === "recording",
-    },
-  ];
-  const activeFaults = snapshot.faults.filter((fault) => fault.latched).map((fault) => ({
-    id: fault.evidenceHash,
-    severity: "error" as const,
-    title: fault.code.replaceAll("_", " ").toUpperCase(),
-    detail: fault.message,
-    recoverable: fault.recoverable,
-    recovery: fault.code === "counter_gap"
-      ? "不能清除或生成有效 seal；确认失败并关闭当前 Run"
-      : fault.code === "control_pipe_loss"
-        ? "重新连接控制面；采集无需重启"
-        : fault.code === "recording_pipeline_failure"
-          ? "确认失败并关闭控制上下文；保留 partial journal，不补写 seal"
-          : "清除测试 barrier fault，再用 Recover 重试保存",
-  }));
+  const visibleUnitLabel = selectedInput?.previewValueUnit === "adc_count" ? "ADC counts" : "µV";
+  const previewTraceSource = selectedPod?.key ?? "No trace source";
+  const previewTraceIdentity = `${previewTraceSource} · ${windowSeconds.toFixed(1)} s · ±${gainUv.toLocaleString()} ${visibleUnitLabel}`;
+  const previewTraceTooltip = selectedInput?.scope === "mock"
+    ? `${previewTraceIdentity}. Values come from the mock preview source and are not hardware-calibrated measurements.`
+    : previewTraceIdentity;
 
   const preflightRunning = busyAction === "preflight" || snapshot.lifecycle === "preflighting";
   const setupTarget = snapshot.lifecycle === "finalized" ? null : snapshot.recordingTarget;
@@ -560,66 +534,66 @@ function App() {
   const preflightChecks: PreflightCheck[] = [
     {
       id: "adapter-scope",
-      label: "适配器与证据范围",
+      label: "Adapter and evidence scope",
       status: "pass",
       detail: capabilities.scope === "software"
-        ? `${capability(capabilities, "mock_acquisition").summary} FT601、Aggregator 10GbE 与物理 Pod 不在本 receipt 范围内。`
-        : `${capability(capabilities, "mock_acquisition").summary} 本页不创建真实记录文件。`,
+        ? `${capability(capabilities, "mock_acquisition").summary} FT601, Aggregator 10GbE, and physical Pods are outside this receipt.`
+        : `${capability(capabilities, "mock_acquisition").summary} This view does not create a physical recording file.`,
       evidence: `${capabilities.adapterId} · ${capabilities.scope.toUpperCase()}`,
     },
     {
       id: "preview-session",
-      label: "Preview 数据源",
+      label: "Preview source",
       status: snapshot.previewState === "live" ? "pass" : "blocked",
       detail: snapshot.previewState === "live"
         ? capabilities.scope === "software"
-          ? "有界 mock Preview 正在运行；它与写盘的独立 deterministic software stream 分开，不证明物理输入。"
-          : "有界 mock Preview 正在运行；只验证控制面流程，不写文件。"
-        : "先启动 Preview 并确认数据流，再创建记录",
+          ? "A bounded mock Preview is live. It is separate from the deterministic software recording stream and does not prove physical input."
+          : "A bounded mock Preview is live. It validates the control flow and does not write a file."
+        : "Start Preview and confirm the stream before creating a recording.",
       evidence: `previewState=${snapshot.previewState} · snapshot #${snapshot.snapshotSequence.toString()}`,
     },
     {
       id: "pod-plan",
-      label: recordingSetupMode === "single" ? "单设备记录身份" : "多设备记录身份",
+      label: recordingSetupMode === "single" ? "Single-device identity" : "Multi-device identities",
       status: recordingSelectionValid ? "pass" : "blocked",
       detail: recordingSelectionValid
-        ? `${selectedRecordPods.length} 个 Pod 将写入；Run plan 绑定 route key、immutable device ID 与 identity receipt`
+        ? `${selectedRecordPods.length} Pod${selectedRecordPods.length === 1 ? "" : "s"} will be recorded. The Run plan binds route keys, immutable device IDs, and identity receipts.`
         : recordingSetupMode === "single"
-          ? "单设备记录必须冻结当前 Preview Pod，且该 Pod 必须由 snapshot 标记为 selectable"
-          : "多设备记录必须由操作者显式选择 2–8 个 selectable Pod",
+          ? "Single-device recording must freeze the current Preview Pod, and the snapshot must mark it selectable."
+          : "Multi-device recording requires an explicit selection of 2–8 selectable Pods.",
       evidence: selectedRecordPods.map((pod) => `${pod.identity.deviceId}@${pod.identity.revision.toString()}`).join(" · ") || "no selected device",
     },
     {
       id: "recording-target",
-      label: "新建记录目录",
+      label: "New recording directory",
       status: setupTarget ? "pass" : "pending",
       detail: setupTarget
         ? `${setupTarget.resolvedRunDirectory} · ${setupTarget.directoryCreateDisposition} · overwrite forbidden`
         : lastCommand?.intent === "preflight" && !lastCommand.accepted
           ? `${lastCommand.reasonCode} · ${lastCommand.message}`
-          : "Preflight 将由 adapter 分配带递增序号的最终目录；UI 不声明 reservation 成功",
+          : "Preflight asks the adapter to allocate a final directory with an incrementing suffix. The UI does not claim reservation success.",
       evidence: setupTarget?.evidenceHash ?? "no reservation receipt",
     },
     {
       id: "final-nwb-output",
-      label: snapshot.scope === "mock" ? "模拟输出范围" : "最终文件 · NWB",
+      label: snapshot.scope === "mock" ? "Simulation output scope" : "Final file · NWB",
       status: snapshot.scope === "mock"
         ? "pass"
         : nwbOutputCapability?.status === "available"
           ? "pass"
           : nwbOutputCapability?.status ?? "unavailable",
       detail: snapshot.scope === "mock"
-        ? "本次只运行模拟工作流，不生成记录文件。"
+        ? "This run exercises only the simulation workflow and creates no recording file."
         : finalOutputReady
-          ? "正式记录必须生成、验证并以 create-new 方式发布 NWB；最终仍以 Run receipt 为准。"
-          : "当前 adapter 没有可用的 NWB materializer，正式记录在 Preflight 阶段被阻止。",
+          ? "A formal recording must generate, validate, and publish NWB with create-new semantics. The Run receipt remains authoritative."
+          : "The current adapter has no available NWB materializer, so Preflight blocks formal recording.",
       evidence: snapshot.scope === "mock"
         ? "MOCK_WORKFLOW_NO_FILE"
         : `${nwbOutputCapability?.reasonCode ?? "NO_NWB_CAPABILITY"} · ${nwbOutputCapability?.claimScope?.toUpperCase() ?? "SOFTWARE"}`,
     },
     {
       id: "daemon-preflight",
-      label: "记录准入快照",
+      label: "Recording admission snapshot",
       status: preflightPassed
         ? "pass"
         : preflightRunning
@@ -628,18 +602,18 @@ function App() {
             ? "blocked"
             : "pending",
       detail: preflightPassed
-        ? `${capabilities.scope === "software" ? "Software daemon" : "Mock adapter"} snapshot 已进入 ${snapshot.lifecycle}`
-        : "等待 adapter 报告，不由按钮推测通过",
+        ? `${capabilities.scope === "software" ? "Software daemon" : "Mock adapter"} snapshot entered ${snapshot.lifecycle}.`
+        : "Waiting for the adapter report; a button press does not imply passage.",
       evidence: snapshot.evidenceHash,
     },
     {
       id: "input-contract",
-      label: "神经数据输入契约",
+      label: "Neural input contract",
       status: recordingSelectionValid && selectedRecordPods.every((pod) =>
         pod.identity.identityEvidenceHash !== null && pod.neuralInput?.evidenceHash !== null)
         ? "pass"
         : "blocked",
-      detail: "每个记录设备必须带 adapter-authored channel count、sample rate、layout 与 input evidence；UI 不从硬件型号推测",
+      detail: "Every recorded device must carry adapter-authored channel count, sample rate, layout, and input evidence. The UI never infers them from the hardware model.",
       evidence: selectedRecordPods.map((pod) => {
         const input = pod.neuralInput;
         return `${pod.identity.deviceId}:${input?.neuralChannelCount ?? "?"}ch@${input?.sampleRateHz ?? "?"}Hz`;
@@ -647,13 +621,6 @@ function App() {
     },
   ];
 
-  const hardwareCapabilities = [
-    capability(capabilities, "ft601_direct"),
-    capability(capabilities, "aggregator_10gbe"),
-    capability(capabilities, "rhs_acquisition"),
-    capability(capabilities, "nwb_materialization"),
-    capability(capabilities, "release_24h"),
-  ];
   const durabilityFaultActive = snapshot.faults.some(
     (fault) => fault.latched && fault.code === "durability_failure",
   );
@@ -662,97 +629,77 @@ function App() {
   );
   const busy = busyAction !== null;
   const canStopRecording = connected && snapshot.lifecycle === "recording";
-  const loadIndicators = [
-    { label: "SOURCE FIFO", value: snapshot.load.sourceBufferPercent },
-    { label: "WRITER QUEUE", value: snapshot.load.writerQueuePercent },
-    { label: "CONTROL LOAD", value: snapshot.load.controlLoadPercent },
-  ];
+  const canPauseRecording = canStopRecording && snapshot.scope === "mock";
   const signalViewOptions: SignalViewOption[] = [
     {
       id: "wideband",
       label: "WIDEBAND",
-      detail: "宽带采样极值",
+      detail: "Sampled wideband extrema",
       status: capability(capabilities, "decimated_preview").status,
       scopeLabel: "MOCK",
     },
     {
       id: "lfp",
       label: "LFP",
-      detail: "合成参考分量",
+      detail: "Synthetic reference component",
       status: capability(capabilities, "lfp_preview").status,
       scopeLabel: "MOCK TRUTH",
     },
     {
       id: "spike",
       label: "SPIKES",
-      detail: "合成事件 + 波形",
+      detail: "Synthetic events and waveforms",
       status: capability(capabilities, "spike_preview").status,
       scopeLabel: "MOCK ORACLE",
     },
   ];
   const previewModeCopy = previewKind === "wideband"
-    ? { title: "宽带采样极值预览", detail: "当前 8 通道 bank；每桶只查有界代表点及已知 spike 支撑点，不冒充完整桶 MIN–MAX", stats: "SAMPLED RMS / PEAK" }
+    ? { title: "Sampled wideband extrema", detail: "Current 8-channel bank. Each bucket inspects bounded representative points and known spike support points; it is not a complete bucket MIN–MAX." }
     : previewKind === "lfp"
-      ? { title: "LFP 参考分量采样极值", detail: "当前 8 通道 bank；来自同一合成式中的 8 Hz 真值分量，不是 Intan 原生 LFP，也不是已验证生产滤波器", stats: "LFP RMS / PEAK" }
-      : { title: "Spike 活动、Raster 与波形", detail: "同一合成流的事件 oracle → 8 通道 bank raster → 选中通道完整保留窗 waveform；可切换全部、统计与最新。不是已验证生产 detector/sorter", stats: "CH EVENTS / SOURCE" };
-  const channelStatsValue = previewKind === "spike"
-    ? channelStats.eventCount === null
-      ? "—"
-      : channelStats.threshold === null
-        ? `${channelStats.eventCount} events · ORACLE`
-        : `${channelStats.eventCount} / ${channelStats.threshold.toFixed(0)} ${channelStats.unitLabel ?? selectedUnitLabel}`
-    : channelStats.rms === null
-      ? "—"
-      : `${channelStats.rms.toFixed(1)} / ${channelStats.peak?.toFixed(1) ?? "—"} ${channelStats.unitLabel ?? selectedUnitLabel}`;
-  const lastCommandLabel = lastCommand?.intent === "stop_recording"
-    ? "END & SAVE"
-    : lastCommand?.intent.replaceAll("_", " ").toUpperCase();
-
+      ? { title: "LFP reference extrema", detail: "Current 8-channel bank from the 8 Hz truth component of the same synthetic expression. It is neither native Intan LFP nor a validated production filter." }
+      : { title: "Spike activity, raster, and waveforms", detail: "Events from the same synthetic oracle feed the 8-channel raster and selected-channel waveform window. All, Stats, and Last are display modes—not a validated production detector or sorter." };
+  const recordingFileSize = snapshot.recordingTarget === null
+    || snapshot.recordingTarget.directoryCreateDisposition === "simulated"
+    ? "NO FILE"
+    : formatByteCount(snapshot.load.recordingFileBytes);
+  const storageFree = formatByteCount(snapshot.load.storageFreeBytes);
+  const storageLow = snapshot.load.storageFreeBytes !== null
+    && Number.isFinite(snapshot.load.storageFreeBytes)
+    && snapshot.load.storageFreeBytes >= 0
+    && snapshot.load.storageFreeBytes < LOW_STORAGE_THRESHOLD_BYTES;
+  const storageLowPodKeys = new Set<PodKey>(
+    storageLow && selectedPod !== null ? [selectedPod.key] : [],
+  );
+  const recordingPath = setupTarget?.resolvedRunDirectory ?? "Not configured";
+  const clampPodPanelWidth = (width: number) => Math.min(360, Math.max(176, Math.round(width)));
+  const handlePodResizeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    podResizeRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: podPanelWidth,
+    };
+  };
+  const handlePodResizeMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const resize = podResizeRef.current;
+    if (resize === null || resize.pointerId !== event.pointerId) return;
+    setPodPanelWidth(clampPodPanelWidth(resize.startWidth + event.clientX - resize.startX));
+  };
+  const handlePodResizeEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (podResizeRef.current?.pointerId !== event.pointerId) return;
+    podResizeRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+  const workspaceStyle = {
+    "--pod-column": `${effectivePodsCollapsed ? 72 : podPanelWidth}px`,
+  } as CSSProperties;
   return (
     <div
       className="app-shell"
       data-signal-focus={signalFocusActive ? "true" : "false"}
     >
-      <header className="bench-header">
-        <div className="brand" aria-label="Forge Acquire">
-          <div className="brand-mark"><Waves size={20} aria-hidden="true" /></div>
-          <div><strong>Forge Acquire</strong><span>NEURAL CAPTURE CONTROL</span></div>
-        </div>
-
-        <div className="adapter-readout">
-          <span className="adapter-readout__lamp" />
-          <div>
-            <span>ACTIVE ADAPTER</span>
-            <strong>{snapshot.scope === "software" ? "SOFTWARE · RUST DATA PLANE" : "MOCK · BROWSER QA"}</strong>
-          </div>
-          <em>SYNTHETIC</em>
-        </div>
-
-        <div className="header-facts">
-          <div><Clock3 size={14} aria-hidden="true" /><span>PLAN</span><strong>{plannedDurationHours.toFixed(1)} h</strong></div>
-          <div><RadioTower size={14} aria-hidden="true" /><span>SNAPSHOT</span><strong>#{snapshot.snapshotSequence.toString()}</strong></div>
-          <div><Database size={14} aria-hidden="true" /><span>RUN EPOCH</span><strong>{snapshot.runEpoch?.toString() ?? "—"}</strong></div>
-        </div>
-
-        <div className="gui-close-boundary">
-          <Cable size={16} aria-hidden="true" />
-          <div><strong>GUI ≠ DAEMON</strong><span>关闭窗口不会请求 Stop</span></div>
-        </div>
-      </header>
-
-      <div className={`command-strip${lastCommand?.accepted === false ? " is-rejected" : ""}`} role={lastCommand?.accepted === false ? "alert" : "status"}>
-        <span>CONTROL RECEIPT</span>
-        {lastCommand ? (
-          <>
-            <strong>{lastCommandLabel} · {lastCommand.accepted ? "ACCEPTED" : "REJECTED"}</strong>
-            <code>{lastCommand.receiptId}</code>
-            <p>{lastCommand.message}；accepted 不等于状态已发生。</p>
-          </>
-        ) : (
-          <p>尚无命令。所有事实由 capability / daemon snapshot / run receipt 提供。</p>
-        )}
-      </div>
-
       <main className={[
         "bench-workspace",
         effectivePodsCollapsed ? "is-pods-collapsed" : "",
@@ -760,6 +707,7 @@ function App() {
       ].filter(Boolean).join(" ")}
       data-pods-collapsed={effectivePodsCollapsed ? "true" : "false"}
       data-controls-collapsed={effectiveControlsCollapsed ? "true" : "false"}
+      style={workspaceStyle}
       >
         <PodRack
           topology={snapshot.topology}
@@ -767,7 +715,7 @@ function App() {
           onSelect={setSelectedPodKey}
           recordPodKeys={rackRecordPodKeys}
           recordSelectionLocked={runPlanLocked}
-          onToggleRecord={handleToggleRecordPod}
+          storageLowPodKeys={storageLowPodKeys}
           onRequestRename={handleRequestRename}
           synthetic={snapshot.synthetic}
           controlConnected={connected}
@@ -782,92 +730,158 @@ function App() {
           }}
         />
 
-        <section
-          className={[
-            "signal-workbench",
-            `signal-workbench--${previewKind}`,
-            effectiveDiagnosticsCollapsed ? "signal-workbench--diagnostics-collapsed" : "",
-          ].filter(Boolean).join(" ")}
-          aria-labelledby="signal-workbench-title"
-          data-preview-mode={previewKind}
-        >
-          <header className="signal-toolbar">
+        {!effectivePodsCollapsed ? (
+          <div
+            className="pod-column-resizer"
+            role="separator"
+            aria-label="Resize device list"
+            aria-orientation="vertical"
+            aria-valuemin={176}
+            aria-valuemax={360}
+            aria-valuenow={podPanelWidth}
+            tabIndex={0}
+            onPointerDown={handlePodResizeStart}
+            onPointerMove={handlePodResizeMove}
+            onPointerUp={handlePodResizeEnd}
+            onPointerCancel={handlePodResizeEnd}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              event.preventDefault();
+              setPodPanelWidth((width) => clampPodPanelWidth(
+                width + (event.key === "ArrowRight" ? 8 : -8),
+              ));
+            }}
+          />
+        ) : null}
+
+        <>
+          <header className="signal-toolbar workspace-signal-toolbar">
             <div className="signal-toolbar__primary">
               <div className="signal-title">
                 <span className="instrument-kicker">DERIVED SIGNAL PREVIEW</span>
-                <h2 id="signal-workbench-title">{selectedPod?.label ?? "无有效 Pod snapshot"}</h2>
-                <p title={previewModeCopy.detail}>{previewModeCopy.title} · {previewModeCopy.detail}</p>
-                {selectedInput ? (
-                  <p className="signal-input-contract">
-                    INPUT RECEIPT · {selectedInput.profileLabel ?? selectedInput.profileId ?? "UNNAMED"}
-                    {` · ${selectedInput.neuralChannelCount} neural · ${(selectedInput.sampleRateHz / 1_000).toFixed(0)} kS/s/ch · ${selectedUnitLabel}`}
-                  </p>
-                ) : null}
-              </div>
-              <div className="signal-state" role="status">
-                <Activity size={14} aria-hidden="true" />
-                <span>{previewActive ? "LIVE PREVIEW" : "WAITING"}</span>
-              </div>
-              {previewKind !== "spike" && selectedBankCount > 0 ? (
-                <div className="toolbar-bank-nav" role="group" aria-label="Preview channel bank">
-                  <button
-                    type="button"
-                    aria-label="Previous preview channel bank"
-                    disabled={selectedBankStart === 0}
-                    onClick={() => setSelectedChannel(Math.max(0, selectedBankStart - 8))}
+                <div className="signal-title__heading">
+                  <div
+                    className="signal-device-name"
+                    data-tooltip={selectedPod?.label ?? "No previewable Pod"}
                   >
-                    <ChevronLeft size={16} aria-hidden="true" />
-                  </button>
-                  <div><span>CHANNEL BANK</span><strong>{selectedBankLabel}</strong></div>
-                  <button
-                    type="button"
-                    aria-label="Next preview channel bank"
-                    disabled={selectedBankStart + selectedBankCount >= selectedChannelCount}
-                    onClick={() => setSelectedChannel(Math.min(selectedChannelCount - 1, selectedBankStart + 8))}
-                  >
-                    <ChevronRight size={16} aria-hidden="true" />
-                  </button>
+                    <h2 id="signal-workbench-title">{selectedPod?.label ?? "No previewable Pod"}</h2>
+                  </div>
+                  <InfoHint label="About this preview">
+                    <strong>{previewModeCopy.title}</strong>
+                    <span>{previewModeCopy.detail}</span>
+                  </InfoHint>
                 </div>
-              ) : null}
+                <p>{previewModeCopy.title}</p>
+                <SignalViewTabs
+                  options={signalViewOptions}
+                  selected={previewKind}
+                  onSelect={setPreviewKind}
+                />
+              </div>
               <button
-                className={`signal-focus-button${signalFocusActive ? " is-active" : ""}`}
+                className={`signal-focus-button icon-action${signalFocusActive ? " is-active" : ""}`}
                 type="button"
-                aria-label={signalFocusActive ? "退出信号聚焦" : "进入信号聚焦"}
+                aria-label={signalFocusActive ? "Exit signal focus" : "Enter signal focus"}
                 aria-pressed={signalFocusActive}
-                title={signalFocusActive ? "恢复进入聚焦前的独立面板状态" : "收起非信号区域，让实际数据占据最大空间"}
+                data-tooltip={signalFocusActive ? "Restore panels" : "Focus signal"}
                 onClick={toggleSignalFocus}
               >
                 {signalFocusActive
                   ? <Minimize2 size={16} aria-hidden="true" />
                   : <Maximize2 size={16} aria-hidden="true" />}
-                <span>{signalFocusActive ? "恢复面板" : "信号聚焦"}</span>
+                <span className="visually-hidden">{signalFocusActive ? "Restore panels" : "Focus signal"}</span>
               </button>
               <button
-                className={`preview-pause${displayPaused ? " is-active" : ""}`}
+                className={`preview-pause icon-action${displayPaused ? " is-active" : ""}`}
                 type="button"
+                aria-label={displayPaused ? "Resume display" : "Freeze display"}
+                data-tooltip={displayPaused ? "Resume display" : "Freeze display"}
                 disabled={!previewActive}
                 onClick={() => setDisplayPaused((paused) => !paused)}
               >
                 {displayPaused ? <Play size={16} aria-hidden="true" /> : <Pause size={16} aria-hidden="true" />}
-                {displayPaused ? "恢复显示" : "冻结显示"}
+                <span className="visually-hidden">{displayPaused ? "Resume display" : "Freeze display"}</span>
+              </button>
+              <button
+                className="panel-collapse-button acquisition-sidebar-toggle icon-action"
+                type="button"
+                aria-label={effectiveControlsCollapsed ? "Expand acquisition controls" : "Collapse acquisition controls"}
+                aria-expanded={!effectiveControlsCollapsed}
+                aria-controls="acquisition-controls"
+                data-tooltip={effectiveControlsCollapsed ? "Expand acquisition controls" : "Collapse acquisition controls"}
+                onClick={() => {
+                  if (signalFocusActive) {
+                    setSignalFocusActive(false);
+                    setControlsCollapsed(false);
+                  } else {
+                    setControlsCollapsed((collapsed) => !collapsed);
+                  }
+                }}
+              >
+                {effectiveControlsCollapsed
+                  ? <PanelRightOpen size={17} aria-hidden="true" />
+                  : <PanelRightClose size={17} aria-hidden="true" />}
+                <span className="visually-hidden">
+                  {effectiveControlsCollapsed ? "Expand acquisition controls" : "Collapse acquisition controls"}
+                </span>
               </button>
             </div>
-            <div className="signal-toolbar__controls">
-              <SignalViewTabs
-                options={signalViewOptions}
-                selected={previewKind}
-                onSelect={setPreviewKind}
-              />
+          </header>
+
+          <section
+            className={[
+              "signal-workbench",
+              `signal-workbench--${previewKind}`,
+              "signal-workbench--diagnostics-collapsed",
+            ].filter(Boolean).join(" ")}
+            aria-labelledby="signal-workbench-title"
+            data-preview-mode={previewKind}
+          >
+
+          <div
+            className="trace-stage"
+            id="signal-preview-panel"
+            role="tabpanel"
+            aria-labelledby={`signal-tab-${previewKind}`}
+            data-signal-kind={previewKind}
+            data-trace-theme={traceTheme}
+          >
+            <div className="preview-display-controls" role="toolbar" aria-label="Preview display controls">
+              {previewKind !== "spike" ? (
+                <div className="preview-trace-metadata" role="group" aria-label="Trace metadata" data-tooltip={previewTraceTooltip}>
+                  <span className="preview-trace-metadata__source">{previewTraceSource}</span>
+                  <span className="preview-trace-metadata__metric">
+                    <small>WINDOW</small>
+                    <strong>{windowSeconds.toFixed(1)} s</strong>
+                  </span>
+                  <span className="preview-trace-metadata__metric preview-trace-metadata__metric--range">
+                    <small>RANGE</small>
+                    <strong>±{gainUv.toLocaleString()}</strong>
+                    <em>{visibleUnitLabel}</em>
+                  </span>
+                </div>
+              ) : (
+                <div className="preview-spike-summary" role="status" aria-label="Spike event summary">
+                  <span>
+                    <small>POD EVENTS</small>
+                    <strong>{channelStats.podEventCount ?? "—"}</strong>
+                  </span>
+                  <span>
+                    <small>SELECTED 8-CH EVENTS</small>
+                    <strong>{channelStats.bankEventCount ?? "—"}</strong>
+                  </span>
+                </div>
+              )}
               <div className="preview-control-cluster">
-                <span>{previewKind === "spike" ? "波形保留时间" : "屏幕历史窗"}</span>
+                <span>{previewKind === "spike" ? "Waveform retention" : "History window"}</span>
                 <div
                   className="segmented"
                   aria-label={previewKind === "spike"
-                    ? "选中通道每条 event waveform 的保留时间；不改变采样率或事件生成"
-                    : "预览屏幕历史时间范围；不改变采样率或检测配置"}
+                    ? "Retention for each selected-channel event waveform; does not change sampling or event generation."
+                    : "Visible Preview history; does not change sampling or detector configuration."}
                   title={previewKind === "spike"
-                    ? "每条 waveform 从其 source sample 时刻起保留相同的 1 / 2 / 5 秒；到期即隐去"
-                    : "1 / 2 / 5 秒只改变屏幕回看范围，不改变 Headstage 采样率"}
+                    ? "Each waveform remains visible for 1, 2, or 5 seconds from its source sample time."
+                    : "The 1, 2, and 5 second choices change only the visible history window."}
                 >
                   {[1, 2, 5].map((seconds) => (
                     <button
@@ -876,8 +890,8 @@ function App() {
                       className={windowSeconds === seconds ? "active" : ""}
                       aria-pressed={windowSeconds === seconds}
                       aria-label={previewKind === "spike"
-                        ? `每条 waveform 保留 ${seconds} 秒`
-                        : `显示过去 ${seconds} 秒`}
+                        ? `Retain each waveform for ${seconds} second${seconds === 1 ? "" : "s"}`
+                        : `Show the past ${seconds} second${seconds === 1 ? "" : "s"}`}
                       onClick={() => setWindowSeconds(seconds)}
                     >
                       {seconds} s
@@ -886,15 +900,19 @@ function App() {
                 </div>
               </div>
               <div className="preview-control-cluster">
-                <span>显示量程 · {selectedUnitLabel}</span>
-                <div className="segmented" aria-label={`预览幅值范围，单位 ${selectedUnitLabel}`}>
+                  <span>Display range · {visibleUnitLabel}</span>
+                <div
+                  className="segmented"
+                  aria-label={`Preview amplitude range in ${visibleUnitLabel}`}
+                  title="Changes only the vertical display scale; device gain and recorded samples are unchanged."
+                >
                   {[100, 200, 500].map((gain) => (
                     <button
                       key={gain}
                       type="button"
                       className={gainUv === gain ? "active" : ""}
                       aria-pressed={gainUv === gain}
-                      aria-label={`显示量程正负 ${gain} ${selectedUnitLabel}`}
+                      aria-label={`Display range plus or minus ${gain} ${visibleUnitLabel}`}
                       onClick={() => setGainUv(gain)}
                     >
                       ±{gain}
@@ -902,196 +920,48 @@ function App() {
                   ))}
                 </div>
               </div>
+              <button
+                className="icon-action trace-theme-toggle"
+                type="button"
+                aria-label={`Switch signal display to ${traceTheme === "dark" ? "light" : "dark"} theme`}
+                data-tooltip={`Switch signal display to ${traceTheme === "dark" ? "light" : "dark"} theme`}
+                aria-pressed={traceTheme === "light"}
+                onClick={() => setTraceTheme((theme) => theme === "dark" ? "light" : "dark")}
+              >
+                {traceTheme === "dark" ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}
+              </button>
             </div>
-          </header>
-
-          <div
-            className="trace-stage"
-            id="signal-preview-panel"
-            role="tabpanel"
-            aria-labelledby={`signal-tab-${previewKind}`}
-            data-signal-kind={previewKind}
-          >
-            {selectedPod ? (
-              <LiveTraceSurface
-                source={adapter.previewSource}
-                podKey={selectedPod.key}
-                signalKind={previewKind}
-                active={previewActive}
-                sourceOpen={connected}
-                sourceAvailable
-                blockedReason="当前 adapter 没有可显示的有界预览。"
-                inputChannelCount={selectedInput?.neuralChannelCount ?? null}
-                selectedChannel={selectedChannel}
-                onSelectChannel={setSelectedChannel}
-                onStats={setChannelStats}
-                gainValue={gainUv}
-                windowSeconds={windowSeconds}
-                paused={displayPaused}
-                markers={[]}
-              />
-            ) : (
-              <div className="trace-empty"><strong>Topology snapshot 中没有可预览 Pod</strong></div>
-            )}
+            <div className="trace-stage__viewport">
+              {selectedPod ? (
+                <LiveTraceSurface
+                  source={adapter.previewSource}
+                  podKey={selectedPod.key}
+                  signalKind={previewKind}
+                  active={previewActive}
+                  inputChannelCount={selectedInput?.neuralChannelCount ?? null}
+                  selectedChannel={selectedChannel}
+                  onSelectChannel={setSelectedChannel}
+                  onStats={setChannelStats}
+                  gainValue={gainUv}
+                  windowSeconds={windowSeconds}
+                  paused={displayPaused}
+                  markers={[]}
+                />
+              ) : (
+                <div className="trace-empty" role="img" aria-label="No preview data" />
+              )}
+            </div>
           </div>
 
-          <div className="signal-readout-strip">
-            <div><Signal size={15} aria-hidden="true" /><span>CHANNEL</span><strong>{previewActive ? `CH ${String(selectedChannel + 1).padStart(3, "0")}` : "—"}</strong></div>
-            <div><Gauge size={15} aria-hidden="true" /><span>{previewModeCopy.stats}</span><strong>{channelStatsValue}</strong></div>
-            {loadIndicators.map((indicator) => {
-              const value = indicator.value === null ? null : Math.min(100, Math.max(0, indicator.value));
-              return (
-                <div className="load-indicator" key={indicator.label}>
-                  <Activity size={15} aria-hidden="true" />
-                  <span>{indicator.label}{snapshot.stale ? " · STALE" : ""}</span>
-                  <strong>{value === null ? "—" : `${value.toFixed(0)}%`}</strong>
-                  <i aria-hidden="true"><b style={{ width: `${value ?? 0}%` }} /></i>
-                </div>
-              );
-            })}
-            <div><Database size={15} aria-hidden="true" /><span>WEBVIEW RAW</span><strong>0 B</strong></div>
-          </div>
-
-          <section
-            className={`diagnostic-region${effectiveDiagnosticsCollapsed ? " is-collapsed" : ""}${activeFaults.length > 0 ? " has-fault" : ""}`}
-            data-collapsed={effectiveDiagnosticsCollapsed ? "true" : "false"}
-            aria-labelledby="diagnostic-region-title"
-          >
-            <header className="diagnostic-region__header">
-              <div className="diagnostic-region__title">
-                <Wrench size={16} aria-hidden="true" />
-                <div>
-                  <span className="instrument-kicker">FAULT / DAEMON EVIDENCE</span>
-                  <strong id="diagnostic-region-title">诊断与恢复</strong>
-                </div>
-              </div>
-              <div className="diagnostic-region__actions">
-                <span
-                  className={`diagnostic-region__summary${activeFaults.length > 0 ? " has-fault" : ""}${snapshot.stale ? " is-stale" : ""}`}
-                  role={activeFaults.length > 0 ? "alert" : "status"}
-                >
-                  {activeFaults.length > 0 ? <AlertTriangle size={14} aria-hidden="true" /> : <Activity size={14} aria-hidden="true" />}
-                  {activeFaults.length > 0
-                    ? `${activeFaults.length} LATCHED FAULT${activeFaults.length === 1 ? "" : "S"}`
-                    : `SNAPSHOT #${snapshot.snapshotSequence.toString()} · ${snapshot.stale ? "STALE" : "FRESH"}`}
-                </span>
-                <button
-                  className="panel-collapse-button"
-                  type="button"
-                  aria-label={effectiveDiagnosticsCollapsed ? "展开诊断与恢复" : "收起诊断与恢复"}
-                  aria-expanded={!effectiveDiagnosticsCollapsed}
-                  aria-controls="diagnostic-deck"
-                  title={effectiveDiagnosticsCollapsed ? "展开故障注入、恢复与硬件证据" : "收起诊断区并把高度返还给信号画布"}
-                  onClick={() => {
-                    if (signalFocusActive) {
-                      setSignalFocusActive(false);
-                      setDiagnosticsCollapsed(false);
-                    } else {
-                      setDiagnosticsCollapsed((collapsed) => !collapsed);
-                    }
-                  }}
-                >
-                  {effectiveDiagnosticsCollapsed
-                    ? <ChevronUp size={17} aria-hidden="true" />
-                    : <ChevronDown size={17} aria-hidden="true" />}
-                </button>
-              </div>
-            </header>
-            {effectiveDiagnosticsCollapsed ? null : (
-              <div className="diagnostic-deck" id="diagnostic-deck">
-                <FaultRecoveryPanel
-                  faults={activeFaults}
-                  options={faultOptions}
-                  selectedFaultId={selectedFaultId}
-                  onSelectFault={(faultId) => setSelectedFaultId(faultId as FaultCode)}
-                  onInject={() => void handleInjectFault()}
-                  onClearResolved={() => void handleClearRecoverable()}
-                  busy={busy}
-                  injectionAvailable={runtime.diagnostics !== null}
-                />
-                <HardwareStatusCard
-                  connection={snapshot.controlConnection}
-                  stale={snapshot.stale}
-                  snapshotSequence={snapshot.snapshotSequence}
-                  observedAtMonotonicMs={snapshot.observedAtMonotonicMs}
-                  evidenceHash={snapshot.evidenceHash}
-                  capabilities={hardwareCapabilities}
-                />
-              </div>
-            )}
           </section>
-        </section>
+        </>
 
         <aside
+          id="acquisition-controls"
           className={`control-stack${effectiveControlsCollapsed ? " control-stack--collapsed" : ""}`}
           data-collapsed={effectiveControlsCollapsed ? "true" : "false"}
         >
-          {effectiveControlsCollapsed ? (
-            <section className="control-rail" aria-label="已收起的采集控制栏">
-              <button
-                className="panel-collapse-button panel-collapse-button--vertical control-rail__expand"
-                type="button"
-                aria-label="展开采集控制栏"
-                aria-expanded={false}
-                title="展开 Preview 与 Recording 控制"
-                onClick={() => {
-                  if (signalFocusActive) {
-                    setSignalFocusActive(false);
-                    setControlsCollapsed(false);
-                  } else {
-                    setControlsCollapsed(false);
-                  }
-                }}
-              >
-                <PanelRightOpen size={18} aria-hidden="true" />
-                <span>CTRL</span>
-              </button>
-              <div className={`control-rail__phase${runOutput.state === "recording" ? " is-recording" : ""}${runOutput.urgent ? " has-fault" : ""}`} title={phase.label}>
-                <Activity size={15} aria-hidden="true" />
-                <span>RUN</span>
-                <strong>{connected ? runOutput.compactLabel : "OFF"}</strong>
-              </div>
-              <div className={`control-rail__preview${previewActive ? " is-live" : ""}`} title={`Preview ${snapshot.previewState}`}>
-                <Waves size={14} aria-hidden="true" />
-                <span>VIEW</span>
-                <strong>{snapshot.previewState === "live" ? "LIVE" : snapshot.previewState === "fault" ? "FAULT" : "OFF"}</strong>
-              </div>
-              <button
-                className="instrument-button instrument-button--stop control-rail__stop"
-                type="button"
-                aria-label="结束并保存"
-                disabled={!canStopRecording || busy}
-                title={connected
-                  ? "一次请求完成停止输入、排空、durability barrier 与 seal；Preview 继续"
-                  : "控制连接丢失；GUI 无法发送结束并保存"}
-                onClick={() => void issue({ type: "stop_recording", reason: "operator" })}
-              >
-                <CircleStop size={18} aria-hidden="true" />
-                <span>End</span>
-                <b>&amp; Save</b>
-              </button>
-              <span className="control-rail__stop-boundary">
-                {!connected
-                  ? "NO CTRL"
-                  : runOutput.state === "recording"
-                    ? "RECORDING"
-                    : runOutput.state === "saving"
-                      ? "NWB OUTPUT"
-                      : runOutput.state === "nwb_saved"
-                        ? "NWB SAVED"
-                        : runOutput.state === "mock_complete"
-                          ? "MOCK ONLY"
-                          : runOutput.state === "raw_retained"
-                            ? "NWB INCOMPLETE"
-                            : runOutput.state === "failed"
-                              ? "RUN FAILED"
-                              : snapshot.previewState === "live" ? "PREVIEW" : "NO RECORDING"}
-              </span>
-              <span className={`control-rail__faults${activeFaults.length > 0 ? " has-fault" : ""}`}>
-                {activeFaults.length > 0 ? `${activeFaults.length} FLT` : "0 FLT"}
-              </span>
-            </section>
-          ) : <>
+          {effectiveControlsCollapsed ? null : (
             <RunControlPanel
             connected={connected}
             busy={busy}
@@ -1101,17 +971,10 @@ function App() {
             runId={snapshot.runId}
             previewState={snapshot.previewState}
             recordingTarget={setupTarget}
-            preflightPassed={lifecycleHasPreflight(snapshot.lifecycle)}
-            recordingArmed={lifecycleHasArm(snapshot.lifecycle)}
             recording={snapshot.lifecycle === "recording"}
-            recordingStopped={lifecycleHasStopped(snapshot.lifecycle)}
+            recordingPaused={snapshot.recordingPaused}
             runOutput={runOutput}
-            finalized={snapshot.lifecycle === "finalized"}
             recoveryRequired={snapshot.lifecycle === "recovery_required"}
-            canConnect={!connected
-              && snapshot.controlConnection === "disconnected"
-              && snapshot.runId === null}
-            canDisconnect={connected && ["connected_idle", "finalized"].includes(snapshot.lifecycle)}
             canStartPreview={connected && ["stopped", "fault"].includes(snapshot.previewState) && selectedPod !== null}
             canStopPreview={connected && snapshot.previewState === "live"}
             canSetupSingleRecording={connected && selectedPod?.selectable === true && (setupTarget !== null
@@ -1122,8 +985,9 @@ function App() {
             recordingDeviceCount={runPlanLocked && snapshot.selectedPodKeys.length > 0
               ? snapshot.selectedPodKeys.length
               : selectedRecordPods.length}
-            previewDeviceName={selectedPod?.identity.displayName ?? selectedPod?.label ?? "未选择设备"}
+            previewDeviceName={selectedPod?.identity.displayName ?? selectedPod?.label ?? "No device selected"}
             canStart={connected && finalOutputReady && snapshot.lifecycle === "armed"}
+            canPauseRecording={canPauseRecording}
             canStopRecording={canStopRecording}
             canRecover={snapshot.scope === "mock"
               && connected
@@ -1133,28 +997,35 @@ function App() {
             canAcknowledgeFailed={connected
               && snapshot.lifecycle === "recovery_required"
               && (nonRecoverableFaultActive || (snapshot.scope === "software" && !snapshot.stale))}
-            onConnect={() => void issue({ type: "connect" })}
-            onDisconnect={() => void issue({ type: "disconnect_control" })}
             onStartPreview={handleStartPreview}
             onStopPreview={() => void issue({ type: "stop_preview", reason: "operator" })}
             onSetupSingleRecording={handleOpenSingleRecordingSetup}
             onSetupMultiRecording={handleOpenMultiRecordingSetup}
             onStart={() => void issue({ type: "start_recording" })}
+            onToggleRecordingPause={() => void issue({
+              type: snapshot.recordingPaused ? "resume_recording" : "pause_recording",
+            })}
             onStopRecording={() => void issue({ type: "stop_recording", reason: "operator" })}
             onRecover={() => void issue({ type: "recover_run" })}
             onAcknowledgeFailed={() => void issue({ type: "acknowledge_failed_run" })}
-            onCollapse={() => setControlsCollapsed(true)}
+            runStatus={(
+              <RunIntegrityRail
+                lifecycle={snapshot.lifecycle}
+                evidence={snapshot.evidence}
+                runReceipt={snapshot.runReceipt}
+                scope={snapshot.scope}
+                recordingFileSize={recordingFileSize}
+                storageFree={storageFree}
+                storageFreeBytes={snapshot.load.storageFreeBytes}
+                deviceName={selectedPod?.identity.displayName ?? "No device selected"}
+                recordingPath={recordingPath}
+                recordingPaused={snapshot.recordingPaused}
+              />
+            )}
             />
-          </>}
+          )}
         </aside>
       </main>
-
-      <RunIntegrityRail
-        lifecycle={snapshot.lifecycle}
-        evidence={snapshot.evidence}
-        runReceipt={snapshot.runReceipt}
-        scope={snapshot.scope}
-      />
 
       {preflightOpen ? <Suspense fallback={null}>
       <PreflightDialog
@@ -1166,8 +1037,8 @@ function App() {
         adapterScope={snapshot.scope}
         finalOutputReady={finalOutputReady}
         finalOutputLabel={snapshot.scope === "mock"
-          ? "模拟流程 · 无文件"
-          : finalOutputReady ? "NWB 2.x · CREATE NEW" : "NWB 输出未接入"}
+          ? "Simulation only · no file"
+          : finalOutputReady ? "NWB 2.x · CREATE NEW" : "NWB output unavailable"}
         runLabel={runLabel}
         requestedDirectory={requestedDirectory}
         plannedDurationHours={plannedDurationHours}

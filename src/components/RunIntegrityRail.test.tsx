@@ -104,9 +104,40 @@ describe("RunIntegrityRail", () => {
 
     expect(markup.match(/data-run-result-state=/g)).toHaveLength(1);
     expect(markup).toContain('data-run-result-state="idle"');
-    expect(markup).toContain("尚未记录");
+    expect(markup).toContain("Not recorded");
     expect(markup).not.toMatch(/data-operator-slot|data-integrity-slot|data-evidence-group/);
-    expect(markup).not.toMatch(/TECHNICAL DETAILS|数据连续性|文件保存|外部事件|seq /);
+    expect(markup).not.toMatch(/TECHNICAL DETAILS|DATA CONTINUITY|FILE SAVE|EXTERNAL EVENTS|seq /);
+  });
+
+  it("moves storage into the Run result tooltip and flags less than 20 GB", () => {
+    const idle = evidence("mock");
+    const lowMarkup = renderToStaticMarkup(
+      <RunIntegrityRail
+        lifecycle="connected_idle"
+        evidence={idle}
+        runReceipt={null}
+        scope="mock"
+        recordingFileSize="1.25 GB"
+        storageFree="19.9 GB"
+        storageFreeBytes={19_900_000_000}
+      />,
+    );
+    const thresholdMarkup = renderToStaticMarkup(
+      <RunIntegrityRail
+        lifecycle="connected_idle"
+        evidence={idle}
+        runReceipt={null}
+        scope="mock"
+        recordingFileSize="1.25 GB"
+        storageFree="20.0 GB"
+        storageFreeBytes={20_000_000_000}
+      />,
+    );
+
+    expect(lowMarkup).toContain("File size: 1.25 GB");
+    expect(lowMarkup).toContain("Storage free: 19.9 GB");
+    expect(lowMarkup).toContain('data-storage-low="true"');
+    expect(thresholdMarkup).toContain('data-storage-low="false"');
   });
 
   it("shows recording as a single live state", () => {
@@ -118,8 +149,8 @@ describe("RunIntegrityRail", () => {
     );
 
     expect(markup).toContain('data-run-result-state="recording"');
-    expect(markup).toContain("正在记录");
-    expect(markup).toContain("模拟数据流");
+    expect(markup).toContain("Recording");
+    expect(markup).toContain("Synthetic data stream");
     expect(markup.match(/data-run-result-state=/g)).toHaveLength(1);
   });
 
@@ -133,7 +164,7 @@ describe("RunIntegrityRail", () => {
     );
 
     expect(result.state).toBe("idle");
-    expect(result.label).toBe("尚未记录");
+    expect(result.label).toBe("Not recorded");
   });
 
   it("does not call an accepted Start request Recording before the snapshot confirms it", () => {
@@ -146,8 +177,8 @@ describe("RunIntegrityRail", () => {
     );
 
     expect(result.state).toBe("recording");
-    expect(result.label).toBe("正在启动记录");
-    expect(result.label).not.toBe("正在记录");
+    expect(result.label).toBe("Starting recording");
+    expect(result.label).not.toBe("Recording");
   });
 
   it("turns a sample gap into the only urgent Run result", () => {
@@ -156,7 +187,7 @@ describe("RunIntegrityRail", () => {
       "acquisition",
       "failed",
       "software",
-      "sample 9000–12000 未处理；本 Run 无效。",
+      "sample 9000–12000 was not processed; this Run is invalid.",
     );
     const markup = renderToStaticMarkup(
       <RunIntegrityRail lifecycle="recovery_required" evidence={failed} runReceipt={null} scope="software" />,
@@ -164,9 +195,9 @@ describe("RunIntegrityRail", () => {
 
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('data-run-result-state="failed"');
-    expect(markup).toContain("记录失败 · 需要恢复");
-    expect(markup).toContain("sample 9000–12000 未处理；本 Run 无效。");
-    expect(markup).not.toContain("已保存");
+    expect(markup).toContain("Recording failed · recovery required");
+    expect(markup).toContain("sample 9000–12000 was not processed; this Run is invalid.");
+    expect(markup).not.toContain("saved");
   });
 
   it("keeps stop and NWB generation pending until the final receipt arrives", () => {
@@ -178,7 +209,7 @@ describe("RunIntegrityRail", () => {
       "software",
     )).toMatchObject({
       state: "saving",
-      label: "正在结束并生成 NWB",
+      label: "Ending and generating NWB",
     });
   });
 
@@ -191,10 +222,10 @@ describe("RunIntegrityRail", () => {
       "mock",
     );
 
-    expect(result).toMatchObject({ state: "mock_complete", label: "模拟流程完成" });
-    expect(result.detail).toContain("未创建记录文件");
-    expect(result.detail).toContain("未生成 NWB");
-    expect(result.label).not.toContain("保存");
+    expect(result).toMatchObject({ state: "mock_complete", label: "Simulation complete" });
+    expect(result.detail).toContain("No recording file");
+    expect(result.detail).toContain("NWB was created");
+    expect(result.label).not.toContain("saved");
   });
 
   it("reports a sealed software journal as raw retained, not as a final file", () => {
@@ -208,11 +239,11 @@ describe("RunIntegrityRail", () => {
 
     expect(result).toMatchObject({
       state: "raw_retained",
-      label: "原始数据已保留 · NWB 未完成",
+      label: "Raw data retained · NWB incomplete",
       phaseLabel: "NWB INCOMPLETE",
     });
-    expect(result.detail).toContain("原始 journal 已封存");
-    expect(result.label).not.toContain("已保存");
+    expect(result.detail).toContain("sealed raw journal");
+    expect(result.label).not.toContain("saved");
   });
 
   it("requires a real validated create-new NWB artifact receipt before saved", () => {
@@ -233,7 +264,7 @@ describe("RunIntegrityRail", () => {
     expect(withoutArtifact.state).toBe("raw_retained");
     expect(withArtifact).toMatchObject({
       state: "nwb_saved",
-      label: "NWB 已保存",
+      label: "NWB saved",
       phaseLabel: "NWB SAVED",
     });
     expect(withArtifact.detail).toContain("FORGE-RUN-001.nwb");
@@ -257,6 +288,6 @@ describe("RunIntegrityRail", () => {
         scope="software"
       />,
     );
-    expect(markup).not.toMatch(/分析|外部事件|Stim Receipt/);
+    expect(markup).not.toMatch(/Analysis|External events|Stim Receipt/);
   });
 });

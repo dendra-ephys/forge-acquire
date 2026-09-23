@@ -1,4 +1,3 @@
-import { Activity } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   EnvelopePreviewFrame,
@@ -29,9 +28,6 @@ export interface LiveTraceSurfaceProps {
   podKey: PodKey;
   signalKind: PreviewSignalKind;
   active: boolean;
-  sourceOpen: boolean;
-  sourceAvailable: boolean;
-  blockedReason?: string;
   inputChannelCount: number | null;
   selectedChannel: number;
   onSelectChannel: (channel: number) => void;
@@ -58,6 +54,7 @@ const EMPTY_STATS: ChannelDisplayStats = {
 
 function frameUnitLabel(frame: PreviewFrame): string {
   if (frame.valueUnit === "adc_count") return "ADC counts";
+  if (frame.valueUnitReasonCode === "NWB_WAVEFORM_RECONSTRUCTION_UNITS") return "NWB µV";
   return frame.valueUnitScope === "mock" ? "SYNTHETIC µV" : "µV";
 }
 
@@ -143,9 +140,6 @@ export function LiveTraceSurface({
   podKey,
   signalKind,
   active,
-  sourceOpen,
-  sourceAvailable,
-  blockedReason,
   inputChannelCount,
   selectedChannel,
   onSelectChannel,
@@ -156,6 +150,7 @@ export function LiveTraceSurface({
   markers,
 }: LiveTraceSurfaceProps) {
   const [frame, setFrame] = useState<PreviewFrame | null>(null);
+  const [spikeDetailOpen, setSpikeDetailOpen] = useState(false);
   const frameRef = useRef<PreviewFrame | null>(null);
   const pausedRef = useRef(paused);
   const lastStatsAtRef = useRef(Number.NEGATIVE_INFINITY);
@@ -226,21 +221,32 @@ export function LiveTraceSurface({
   }, [acceptFrame, paused, source]);
 
   useEffect(() => {
+    if (signalKind !== "spike") setSpikeDetailOpen(false);
+  }, [signalKind]);
+
+  useEffect(() => {
     if (frameRef.current) onStats(frameStats(frameRef.current, selectedChannel));
   }, [onStats, selectedChannel]);
 
   if (!frame) {
-    const modeLabel = signalKind === "wideband" ? "Wideband" : signalKind === "lfp" ? "LFP" : "Spike";
+    const emptyChannels = Array.from({ length: channelCount }, (_, index) => channelStart + index);
     return (
-      <div className="trace-empty">
-        <div>
-          <div className="trace-empty-icon"><Activity size={21} aria-hidden="true" /></div>
-          <strong>{sourceOpen ? `准备显示 ${modeLabel} 预览` : "尚未连接控制面"}</strong>
-          <p>{sourceOpen
-            ? "通过 Preflight 与 Recording Arm 后，预览会在采集期间显示。"
-            : sourceAvailable
-              ? "连接采集控制面后可启动有界 Preview。"
-              : blockedReason}</p>
+      <div
+        className={`trace-empty trace-empty--${signalKind}`}
+        role="img"
+        aria-label={`Empty ${signalKind} preview with ${channelCount} channel baselines`}
+      >
+        <div className="trace-empty__lanes" aria-hidden="true">
+          {emptyChannels.map((channel) => (
+            <div className="trace-empty__lane" key={channel}>
+              <span>CH {String(channel + 1).padStart(2, "0")}</span>
+              <i />
+            </div>
+          ))}
+        </div>
+        <div className="trace-empty__axis" aria-hidden="true">
+          <span>−{windowSeconds} s</span>
+          <span>0 s</span>
         </div>
       </div>
     );
@@ -252,7 +258,12 @@ export function LiveTraceSurface({
         frame={frame as SpikePreviewFrame}
         expectedChannelCount={inputChannelCount}
         selectedChannel={selectedChannel}
-        onSelect={onSelectChannel}
+        detailOpen={spikeDetailOpen}
+        onSelect={(channel) => {
+          setSpikeDetailOpen(true);
+          onSelectChannel(channel);
+        }}
+        onCloseDetail={() => setSpikeDetailOpen(false)}
         gainValue={gainValue}
         paused={paused}
       />
@@ -274,14 +285,6 @@ export function LiveTraceSurface({
         startMonotonicMs: block.generatedAtMonotonicMs - frame.windowSeconds * 1_000,
         endMonotonicMs: block.generatedAtMonotonicMs,
       }}
-      syntheticLabel={lfp ? "SYNTHETIC LFP" : "SYNTHETIC WIDEBAND"}
-      displayOnlyLabel={paused
-        ? "DISPLAY PAUSED · ACQUISITION CONTINUES"
-        : lfp
-          ? "SYNTHETIC TRUTH COMPONENT · NO PRODUCTION FILTER"
-          : frame.aggregation === "complete_bucket_min_max"
-            ? "BUCKET MIN–MAX · LIVE DISPLAY · NO RAW"
-            : "SAMPLED EXTREMA · NOT COMPLETE BUCKET MIN–MAX · NO RAW"}
       emptyText={`No ${lfp ? "LFP" : "wideband"} preview available`}
       ariaLabel={lfp ? "Live LFP bank traces" : "Live wideband bank traces"}
     />

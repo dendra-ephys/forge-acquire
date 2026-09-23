@@ -107,6 +107,10 @@ export interface DaemonLoadSnapshot {
   controlLoadPercent: number | null;
   inputBytesPerSecond: number | null;
   expectedBytesPerSecond: number | null;
+  /** Adapter-authored bytes currently present in the active recording file. */
+  recordingFileBytes: number | null;
+  /** Adapter-authored free bytes on the selected recording volume. */
+  storageFreeBytes: number | null;
 }
 
 export type PodKey = string;
@@ -144,6 +148,7 @@ export type NeuralSampleEncoding =
   | "signed_i16_le"
   | "offset_binary_u16_le"
   | "synthetic_generator"
+  | "nwb_waveform_reconstruction"
   | "unknown";
 
 export type PreviewValueUnit = "adc_count" | "microvolt";
@@ -307,6 +312,8 @@ export interface DaemonSnapshot {
   scope: AdapterScope;
   synthetic: boolean;
   lifecycle: AcquireLifecycleState;
+  /** True only when the adapter has explicitly acknowledged a reversible recording pause. */
+  recordingPaused: boolean;
   previewState: PreviewSessionState;
   controlConnection: ControlConnectionState;
   stale: boolean;
@@ -375,6 +382,8 @@ export type AcquireIntent =
   | { type: "preflight"; plan: RunPlan }
   | { type: "arm_recording" }
   | { type: "start_recording" }
+  | { type: "pause_recording" }
+  | { type: "resume_recording" }
   | { type: "stop_recording"; reason?: string }
   | { type: "recover_run" }
   | { type: "acknowledge_failed_run" };
@@ -541,6 +550,8 @@ export interface SpikeChannelActivity {
   observedEventCount: number;
   rateHz: number;
   valid: boolean;
+  /** Up to three recent event-aligned snippets for the all-channel overview. */
+  recentWaveforms: readonly (readonly number[])[];
 }
 
 export interface SpikeRasterAccounting {

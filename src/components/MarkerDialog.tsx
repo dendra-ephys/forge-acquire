@@ -3,7 +3,7 @@ import { useEffect, useId, useState } from "react";
 import type { Marker } from "../core/types";
 import { useModalFocus } from "../core/useModalFocus";
 
-const defaultPresetLabels = ["行为", "刺激", "同步事件", "备注"];
+const defaultPresetLabels = ["Behavior", "Stimulation", "Sync event", "Note"];
 
 export interface MarkerDialogProps {
   open: boolean;
@@ -15,9 +15,9 @@ export interface MarkerDialogProps {
 
 function formatCapturedTime(draft: Marker): string {
   if (draft.hardwareGlobalTime !== null) {
-    return `硬件全局时间 ${draft.hardwareGlobalTime.toLocaleString("zh-CN")}`;
+    return `Hardware global time ${draft.hardwareGlobalTime.toLocaleString("en-US")}`;
   }
-  return `主机单调时间 ${draft.hostMonotonicMs.toFixed(3)} ms`;
+  return `Host monotonic time ${draft.hostMonotonicMs.toFixed(3)} ms`;
 }
 
 export function MarkerDialog({
@@ -70,13 +70,13 @@ export function MarkerDialog({
       >
         <header className="dialog-header">
           <div>
-            <h2 id="marker-title">补充标记内容</h2>
-            <p>时间已经锁定；这里只补充人类可读信息。</p>
+            <h2 id="marker-title">Add marker details</h2>
+            <p>The timestamp is locked. Add only human-readable context here.</p>
           </div>
           <button
             className="dialog-close"
             type="button"
-            aria-label="关闭标记编辑"
+            aria-label="Close marker editor"
             onClick={onCancel}
           >
             ×
@@ -92,28 +92,28 @@ export function MarkerDialog({
           <div className="dialog-body">
             <div id="marker-capture-note" className="captured-time">
               <span>
-                时间已在对话框打开前捕获
+                Time captured before the dialog opened
                 <br />
-                输入标签和备注不会移动事件位置
+                Labels and notes do not move the event
               </span>
               {draft !== null && <strong>{formatCapturedTime(draft)}</strong>}
             </div>
 
             {draft !== null && draft.nearestSampleCounter !== null && (
               <div className="captured-time">
-                <span>最近样本计数</span>
+                <span>Latest sample count</span>
                 <strong>{draft.nearestSampleCounter.toLocaleString("zh-CN")}</strong>
               </div>
             )}
 
             {draft === null ? (
               <p role="alert">
-                没有已捕获的 Marker 草稿，请关闭后重新点击“添加标记”。
+                No marker draft was captured. Close this dialog and choose Add marker again.
               </p>
             ) : (
               <>
                 <div className="field">
-                  <label>快速标签</label>
+                  <label>Quick labels</label>
                   <div className="preset-row">
                     {presetLabels.map((preset) => (
                       <button
@@ -130,26 +130,26 @@ export function MarkerDialog({
                 </div>
 
                 <div className="field">
-                  <label htmlFor={labelId}>标签</label>
+                  <label htmlFor={labelId}>Label</label>
                   <input
                     id={labelId}
                     type="text"
                     value={label}
                     maxLength={80}
                     data-modal-initial-focus
-                    placeholder="选择预设或输入简短标签"
+                    placeholder="Choose a preset or enter a short label"
                     onChange={(event) => setLabel(event.target.value)}
                   />
                 </div>
 
                 <div className="field">
-                  <label htmlFor={noteId}>备注（可选）</label>
+                  <label htmlFor={noteId}>Note (optional)</label>
                   <textarea
                     id={noteId}
                     value={note}
                     maxLength={500}
                     rows={4}
-                    placeholder="补充当时发生了什么"
+                    placeholder="What happened at this moment?"
                     onChange={(event) => setNote(event.target.value)}
                   />
                 </div>
@@ -159,14 +159,14 @@ export function MarkerDialog({
 
           <footer className="dialog-actions">
             <button className="button button-secondary" type="button" onClick={onCancel}>
-              取消
+              Cancel
             </button>
             <button
               className="button button-primary"
               type="submit"
               disabled={draft === null || label.trim().length === 0}
             >
-              保存标记
+              Save marker
             </button>
           </footer>
         </form>
