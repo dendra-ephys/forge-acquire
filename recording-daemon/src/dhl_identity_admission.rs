@@ -680,7 +680,7 @@ fn read_array<const N: usize>(
 mod tests {
     use super::*;
 
-    const DHL_V1_VECTORS_JSON: &str = include_str!("../../../protocol/golden/dhl_v1_vectors.json");
+    const DHL_V1_VECTORS_JSON: &str = include_str!("../../protocol/dhl/golden/dhl_v1_vectors.json");
 
     fn policy_for(identity: &DhlIdentity) -> DhlIdentityAdmissionPolicyV1 {
         DhlIdentityAdmissionPolicyV1 {

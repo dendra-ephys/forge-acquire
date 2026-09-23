@@ -3,6 +3,13 @@
   "contract": "Forge/protocol/DHL_V1.md#component-inventory-payload",
   "channel_contract": "Forge/protocol/CHANNEL_MAP_V1.md",
   "instance_order": "formal SKiDL reference order: U300, then U301",
+  "vstim_profile_contract": {
+    "none": 0,
+    "bipolar_7v": 1,
+    "bipolar_22v5": 2,
+    "reserved_unassigned": ["bipolar_22v5"],
+    "admission": "exact assembly name, board profile, and admitted manifest; descriptor stimulation bit alone is insufficient"
+  },
   "profiles": [
     {"id": 1, "name": "rhd2132x1", "variant": 1, "components": [{"instance_id": 0, "reference": "U300", "model_id": 65537, "first_global_channel": 0, "channel_count": 32}]},
     {"id": 2, "name": "rhd2132x2", "variant": 1, "components": [{"instance_id": 0, "reference": "U300", "model_id": 65537, "first_global_channel": 0, "channel_count": 32}, {"instance_id": 1, "reference": "U301", "model_id": 65537, "first_global_channel": 32, "channel_count": 32}]},
@@ -14,20 +21,20 @@
     {"id": 8, "name": "rhd2164x1_rhs2116x1", "variant": 5, "components": [{"instance_id": 0, "reference": "U300", "model_id": 65538, "first_global_channel": 0, "channel_count": 64}, {"instance_id": 1, "reference": "U301", "model_id": 65539, "first_global_channel": 64, "channel_count": 16}]}
   ],
   "assemblies": [
-    {"name": "rhd2132x1", "board_profile_id": 1, "descriptor_feature_flags": 0, "expected_instance_ids": [0]},
-    {"name": "rhd2132x1_imu", "board_profile_id": 1, "descriptor_feature_flags": 2, "expected_instance_ids": [0, 100]},
-    {"name": "rhd2132x1_echem", "board_profile_id": 1, "descriptor_feature_flags": 1, "expected_instance_ids": [0, 101]},
-    {"name": "rhd2132x1_imu_echem", "board_profile_id": 1, "descriptor_feature_flags": 3, "expected_instance_ids": [0, 100, 101]},
-    {"name": "rhd2132x2", "board_profile_id": 2, "descriptor_feature_flags": 0, "expected_instance_ids": [0, 1], "status": "decode_only"},
-    {"name": "rhd2164x1", "board_profile_id": 3, "descriptor_feature_flags": 0, "expected_instance_ids": [0]},
-    {"name": "rhd2164x1_echem", "board_profile_id": 3, "descriptor_feature_flags": 1, "expected_instance_ids": [0, 101]},
-    {"name": "rhd2164x2", "board_profile_id": 4, "descriptor_feature_flags": 0, "expected_instance_ids": [0, 1]},
-    {"name": "rhs2116x1", "board_profile_id": 5, "descriptor_feature_flags": 4, "expected_instance_ids": [0]},
-    {"name": "rhs2116x1_echem", "board_profile_id": 5, "descriptor_feature_flags": 5, "expected_instance_ids": [0, 101]},
-    {"name": "rhs2116x2", "board_profile_id": 6, "descriptor_feature_flags": 4, "expected_instance_ids": [0, 1]},
-    {"name": "rhs2116x2_imu", "board_profile_id": 6, "descriptor_feature_flags": 6, "expected_instance_ids": [0, 1, 100]},
-    {"name": "rhd2132x1_rhs2116x1", "board_profile_id": 7, "descriptor_feature_flags": 4, "expected_instance_ids": [0, 1]},
-    {"name": "rhd2164x1_rhs2116x1", "board_profile_id": 8, "descriptor_feature_flags": 4, "expected_instance_ids": [0, 1]}
+    {"name": "rhd2132x1", "board_profile_id": 1, "descriptor_feature_flags": 0, "vstim_profile": "none", "expected_instance_ids": [0]},
+    {"name": "rhd2132x1_imu", "board_profile_id": 1, "descriptor_feature_flags": 2, "vstim_profile": "none", "expected_instance_ids": [0, 100]},
+    {"name": "rhd2132x1_echem", "board_profile_id": 1, "descriptor_feature_flags": 1, "vstim_profile": "none", "expected_instance_ids": [0, 101]},
+    {"name": "rhd2132x1_imu_echem", "board_profile_id": 1, "descriptor_feature_flags": 3, "vstim_profile": "none", "expected_instance_ids": [0, 100, 101]},
+    {"name": "rhd2132x2", "board_profile_id": 2, "descriptor_feature_flags": 0, "vstim_profile": "none", "expected_instance_ids": [0, 1], "status": "decode_only"},
+    {"name": "rhd2164x1", "board_profile_id": 3, "descriptor_feature_flags": 0, "vstim_profile": "none", "expected_instance_ids": [0]},
+    {"name": "rhd2164x1_echem", "board_profile_id": 3, "descriptor_feature_flags": 1, "vstim_profile": "none", "expected_instance_ids": [0, 101]},
+    {"name": "rhd2164x2", "board_profile_id": 4, "descriptor_feature_flags": 0, "vstim_profile": "none", "expected_instance_ids": [0, 1]},
+    {"name": "rhs2116x1", "board_profile_id": 5, "descriptor_feature_flags": 4, "vstim_profile": "bipolar_7v", "expected_instance_ids": [0]},
+    {"name": "rhs2116x1_echem", "board_profile_id": 5, "descriptor_feature_flags": 5, "vstim_profile": "bipolar_7v", "expected_instance_ids": [0, 101]},
+    {"name": "rhs2116x2", "board_profile_id": 6, "descriptor_feature_flags": 4, "vstim_profile": "bipolar_7v", "expected_instance_ids": [0, 1]},
+    {"name": "rhs2116x2_imu", "board_profile_id": 6, "descriptor_feature_flags": 6, "vstim_profile": "bipolar_7v", "expected_instance_ids": [0, 1, 100]},
+    {"name": "rhd2132x1_rhs2116x1", "board_profile_id": 7, "descriptor_feature_flags": 4, "vstim_profile": "bipolar_7v", "expected_instance_ids": [0, 1]},
+    {"name": "rhd2164x1_rhs2116x1", "board_profile_id": 8, "descriptor_feature_flags": 4, "vstim_profile": "bipolar_7v", "expected_instance_ids": [0, 1]}
   ],
   "optional_components": [
     {"instance_id": 100, "reference": "U500", "model_id": 131073, "class": "imu", "neural_channels": 0},

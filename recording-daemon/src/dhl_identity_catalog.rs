@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 
 const COMPONENT_INVENTORY_PROFILES_JSON: &str =
     include_str!("../../contracts/headstage/firmware/component_inventory_profiles.json");
-const CHANNEL_MAPS_V1_JSON: &str = include_str!("../../../protocol/channel_maps_v1.json");
+const CHANNEL_MAPS_V1_JSON: &str = include_str!("../../protocol/dhl/channel_maps_v1.json");
 const HEADSTAGE_PRODUCT_MATRIX_JSON: &str =
     include_str!("../../contracts/headstage/docs/headstage_product_matrix_v1.json");
 
