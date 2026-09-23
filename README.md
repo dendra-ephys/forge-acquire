@@ -31,3 +31,8 @@ evidence that native acquisition files were produced by qualified hardware.
 
 See `REPOSITORY_CONTRACT.md` for repository provenance and release semantics, and the
 documents under `docs/` for the detailed architecture and open qualification gates.
+
+## License
+
+Forge Acquire is licensed under the GNU General Public License version 3 only
+(`GPL-3.0-only`). See [LICENSE](LICENSE).

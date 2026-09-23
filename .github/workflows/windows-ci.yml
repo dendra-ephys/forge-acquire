@@ -1,0 +1,94 @@
+name: Windows CI
+
+on:
+  push:
+    branches:
+      - main
+      - preview
+  pull_request:
+    branches:
+      - main
+      - preview
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-package:
+    name: Validate and package
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Pixi
+        uses: prefix-dev/setup-pixi@v0.9.1
+        with:
+          pixi-version: v0.71.1
+          cache: true
+
+      - name: Install JavaScript dependencies
+        run: pixi run npm ci
+
+      - name: Verify GPL-3.0-only declaration
+        shell: pwsh
+        run: |
+          $package = Get-Content -Raw package.json | ConvertFrom-Json
+          if ($package.license -ne "GPL-3.0-only") {
+            throw "package.json must declare GPL-3.0-only"
+          }
+          if (-not (Test-Path -LiteralPath LICENSE)) {
+            throw "LICENSE is missing"
+          }
+          if (-not (Select-String -LiteralPath LICENSE -Pattern "GNU GENERAL PUBLIC LICENSE" -Quiet)) {
+            throw "LICENSE is not the GNU GPL text"
+          }
+
+      - name: Run frontend tests
+        run: pixi run npm test
+
+      - name: Build frontend
+        run: pixi run npm run build
+
+      - name: Check bundle budget
+        run: pixi run npm run check:bundle
+
+      - name: Validate Rust, Python, and C++ protocol bindings
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
+          pixi run npm run test:protocol
+
+      - name: Check Rust formatting
+        run: pixi run cargo fmt --manifest-path recording-daemon/Cargo.toml -- --check
+
+      - name: Test Rust data plane
+        run: pixi run cargo test --locked --manifest-path recording-daemon/Cargo.toml --all-targets
+
+      - name: Test Rust qualification configuration
+        run: pixi run cargo test --locked --manifest-path recording-daemon/Cargo.toml --all-targets --features qualification-harness
+
+      - name: Build Windows installer
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/preview'
+        run: pixi run npm run package:windows
+
+      - name: Upload Windows installer
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/preview'
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-acquire-windows-x64
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 14
