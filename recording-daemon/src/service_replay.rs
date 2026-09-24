@@ -242,6 +242,7 @@ struct PreparedReplay {
 struct ReplayWorker {
     action: Arc<AtomicU8>,
     paused: Arc<AtomicBool>,
+    pause_acknowledged: Arc<AtomicBool>,
     completion: mpsc::Receiver<WorkerCompletion>,
     join: Option<JoinHandle<()>>,
 }
@@ -775,8 +776,10 @@ impl ReplayWorker {
         }
         let action = Arc::new(AtomicU8::new(ACTION_RUNNING));
         let paused = Arc::new(AtomicBool::new(false));
+        let pause_acknowledged = Arc::new(AtomicBool::new(false));
         let worker_action = Arc::clone(&action);
         let worker_paused = Arc::clone(&paused);
+        let worker_pause_acknowledged = Arc::clone(&pause_acknowledged);
         let (completion_tx, completion_rx) = mpsc::sync_channel(1);
         let join = thread::Builder::new()
             .name("forge-protected-replay".to_owned())
@@ -785,6 +788,7 @@ impl ReplayWorker {
                     prepared,
                     worker_action,
                     worker_paused,
+                    worker_pause_acknowledged,
                     owner_shutdown,
                     progress,
                     #[cfg(windows)]
@@ -796,6 +800,7 @@ impl ReplayWorker {
         Ok(Self {
             action,
             paused,
+            pause_acknowledged,
             completion: completion_rx,
             join: Some(join),
         })
@@ -806,12 +811,17 @@ impl ReplayWorker {
     }
 
     fn set_paused(&mut self, paused: bool, progress: &ReplayProgress) -> io::Result<()> {
-        self.paused.store(paused, Ordering::Release);
         if !paused {
+            self.pause_acknowledged.store(false, Ordering::Release);
+            self.paused.store(false, Ordering::Release);
             return Ok(());
         }
+        self.pause_acknowledged.store(false, Ordering::Release);
+        self.paused.store(true, Ordering::Release);
         let deadline = std::time::Instant::now() + PAUSE_DRAIN_DEADLINE;
-        while progress.queue_used.load(Ordering::Acquire) != 0 {
+        while !self.pause_acknowledged.load(Ordering::Acquire)
+            || progress.queue_used.load(Ordering::Acquire) != 0
+        {
             if self.action.load(Ordering::Acquire) != ACTION_RUNNING {
                 return Err(io::Error::new(
                     io::ErrorKind::Interrupted,
@@ -820,6 +830,7 @@ impl ReplayWorker {
             }
             if std::time::Instant::now() >= deadline {
                 self.paused.store(false, Ordering::Release);
+                self.pause_acknowledged.store(false, Ordering::Release);
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
                     "recording pause could not drain the write queue before its deadline",
@@ -855,6 +866,7 @@ fn run_worker(
     prepared: PreparedReplay,
     action: Arc<AtomicU8>,
     paused: Arc<AtomicBool>,
+    pause_acknowledged: Arc<AtomicBool>,
     owner_shutdown: Arc<AtomicBool>,
     progress: Arc<ReplayProgress>,
     #[cfg(windows)] mut analysis_branches: Vec<LiveAnalysisBranch>,
@@ -907,6 +919,7 @@ fn run_worker(
                 &record_tx,
                 &producer_action,
                 &paused,
+                &pause_acknowledged,
                 &producer_owner_shutdown,
                 &producer_consumer_failed,
                 &producer_progress,
@@ -922,12 +935,6 @@ fn run_worker(
     let analysis_clock_origin = Instant::now();
     let writer_result = (|| -> io::Result<()> {
         while let Ok(record) = record_rx.recv() {
-            progress
-                .queue_used
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
-                    value.checked_sub(1)
-                })
-                .map_err(|_| io::Error::other("replay queue watermark underflow"))?;
             writer.append_record(record.as_slice())?;
             let committed = progress.committed.fetch_add(1, Ordering::AcqRel) + 1;
             #[cfg(windows)]
@@ -964,6 +971,11 @@ fn run_worker(
             progress
                 .expected_last_plus_one
                 .store(committed, Ordering::Release);
+            // Keep the logical queue slot occupied until the record is actually
+            // committed. Pause waits for this watermark after the producer has
+            // acknowledged the request, so its success reply is also the exact
+            // storage-write boundary.
+            release_replay_queue_slot(&progress)?;
             if committed.is_multiple_of(durability_batch) {
                 #[cfg(test)]
                 thread::sleep(stream.durability_barrier_delay);
@@ -1022,6 +1034,7 @@ fn run_replay_producer(
     record_tx: &mpsc::SyncSender<PooledBuffer>,
     action: &AtomicU8,
     paused: &AtomicBool,
+    pause_acknowledged: &AtomicBool,
     owner_shutdown: &AtomicBool,
     consumer_failed: &AtomicBool,
     progress: &ReplayProgress,
@@ -1030,6 +1043,7 @@ fn run_replay_producer(
         && !owner_shutdown.load(Ordering::Acquire)
     {
         if paused.load(Ordering::Acquire) {
+            pause_acknowledged.store(true, Ordering::Release);
             for source in sources.iter_mut() {
                 source.skip_next_record()?;
                 progress
@@ -1224,6 +1238,7 @@ mod tests {
             let (record_tx, record_rx) = mpsc::sync_channel::<PooledBuffer>(1);
             let action = Arc::new(AtomicU8::new(ACTION_RUNNING));
             let paused = Arc::new(AtomicBool::new(false));
+            let pause_acknowledged = Arc::new(AtomicBool::new(false));
             let owner_shutdown = Arc::new(AtomicBool::new(false));
             let consumer_failed = Arc::new(AtomicBool::new(false));
             let progress = Arc::new(ReplayProgress::default());
@@ -1241,6 +1256,7 @@ mod tests {
                     &record_tx,
                     &producer_action,
                     &paused,
+                    &pause_acknowledged,
                     &producer_owner_shutdown,
                     &producer_consumer_failed,
                     &producer_progress,
