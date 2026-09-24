@@ -653,8 +653,8 @@ try {
   if (!Number.isFinite(renderedActivityChannels) || renderedActivityChannels > 48) {
     throw new Error(`Spike activity rendered an unbounded DOM channel count: ${renderedActivityChannels}`);
   }
-  if (totalActivityChannels !== 16) {
-    throw new Error(`NWB-derived browser demo must expose its 16 source channels, got ${totalActivityChannels}`);
+  if (totalActivityChannels !== 128) {
+    throw new Error(`NWB-derived browser demo must expose 128 channels per Pod, got ${totalActivityChannels}`);
   }
   const activityMetrics = await channelOverview.evaluate((element) => ({
     clientHeight: element.clientHeight,
@@ -664,10 +664,11 @@ try {
   if (activityMetrics.overflowY !== "scroll") {
     throw new Error(`Spike overview does not expose a native vertical channel scrollbar: ${JSON.stringify(activityMetrics)}`);
   }
-  const firstChannel = page.locator('[data-testid="spike-activity-channel"][data-channel="0"]');
+  const firstChannel = page.locator('[data-testid="spike-activity-channel"]')
+    .filter({ has: page.locator('[data-testid="spike-channel-waveform"]') }).first();
   const firstWaveform = firstChannel.locator('[data-testid="spike-channel-waveform"]');
   const firstWaveformPoints = await firstWaveform.locator("polyline").last().getAttribute("points") ?? "";
-  if ((await firstChannel.locator("strong").textContent())?.trim() !== "CH 001"
+  if (!/^CH \d{3}$/.test((await firstChannel.locator("strong").textContent())?.trim() ?? "")
       || (await firstWaveform.locator("polyline").count()) === 0
       || new Set(firstWaveformPoints.split(" ").map((point) => point.split(",")[1])).size < 3
       || (await channelOverview.getByText(/Hz/).count()) !== 0) {
@@ -698,7 +699,10 @@ try {
     .every((element) => element.textContent?.trim() !== "—"));
   await screenshot("03a-spike-all-channel-overview.png");
   if (activityMetrics.scrollHeight > activityMetrics.clientHeight) {
-    await channelOverview.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    await channelOverview.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
     await page.waitForFunction(() => Number(document.querySelector('[data-testid="spike-overview"]')?.getAttribute("data-window-start")) > 0);
   }
   const finalChannelIndex = totalActivityChannels - 1;
@@ -788,6 +792,12 @@ try {
     }
   }
 
+  await channelOverview.evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await page.waitForFunction(() => document.querySelector('[data-testid="spike-overview"]')
+    ?.getAttribute("data-window-start") === "0");
   for (const channel of [7, 8]) {
     await page.locator(`[data-testid="spike-activity-channel"][data-channel="${channel}"]`).click();
     await page.waitForFunction((selectedChannel) => {

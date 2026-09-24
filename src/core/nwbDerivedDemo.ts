@@ -1,9 +1,11 @@
-import fixtureJson from "../fixtures/nwb-waveform-demo.v2.json";
+import fixtureJson from "../fixtures/nwb-waveform-demo.v3.json";
 import type { PreviewNeuralModel, PreviewNeuralSample } from "./previewNeuralModel";
 import { neuralEvidenceHash } from "./syntheticNeural";
 
 interface NwbDemoChannel {
+  demoChannel: number;
   sourceUnitId: number;
+  sourceWindowStartSeconds: number;
   recordingEventCount: number;
   recordingRateHz: number;
   eventSamples: number[];
@@ -19,6 +21,8 @@ interface NwbDemoFixture {
     sha256: string;
     byteLength: number;
     channelCount: number;
+    sourceChannelCount: number;
+    demoChannelCount: number;
     durationSeconds: number;
     waveformPointCount: number;
     storedUnit: string;
@@ -34,7 +38,7 @@ interface NwbDemoFixture {
   reconstruction: {
     sampleRateHz: number;
     loopSeconds: number;
-    sourceWindowStartSeconds: number;
+    sourceWindowStartSeconds: number[];
     microvoltsPerCount: number;
     waveformPretriggerSamples: number;
     waveformSelection: string;
@@ -85,13 +89,13 @@ function lowerBound(values: readonly number[], target: number): number {
  */
 export class NwbDerivedDemoModel implements PreviewNeuralModel {
   readonly sourceKind = "nwb-derived-reconstruction" as const;
-  readonly channelCount = fixture.source.channelCount;
+  readonly channelCount = fixture.source.demoChannelCount;
   readonly scenarioId = fixture.fixtureId;
   readonly scenarioHash = neuralEvidenceHash([
     fixture.fixtureId,
     `schema=${fixture.schemaVersion}`,
     `source_sha256=${fixture.source.sha256}`,
-    `source_window=${fixture.reconstruction.sourceWindowStartSeconds}`,
+    `source_windows=${fixture.reconstruction.sourceWindowStartSeconds.join(",")}`,
     `loop_seconds=${fixture.reconstruction.loopSeconds}`,
     `microvolts_per_count=${fixture.reconstruction.microvoltsPerCount}`,
     `lfp_path=${fixture.source.lfpPath}`,

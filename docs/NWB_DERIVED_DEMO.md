@@ -17,12 +17,15 @@ events is a deterministic reconstruction and is not a copied raw recording.
 | LFP source | `acquisition/LFP/data`, 16 channels at 1000 Hz |
 
 The compact checked-in fixture is
-`src/fixtures/nwb-waveform-demo.v2.json`. It contains no broadband continuous
-source recording. It retains a representative 10-second event-time window
-beginning at source time `507 s`, five deterministic snippets per channel, and
-the aligned LFP window block-averaged to 50 Hz (500 points per channel). The
-fixture totals 80 Spike templates and 8000 LFP points, plus source counts,
-rates, extraction parameters, and the source hash.
+`src/fixtures/nwb-waveform-demo.v3.json`. It contains no broadband continuous
+source recording. The source has 16 physical channels; the demo exposes 128
+channels by pairing those 16 source channels with eight distinct 10-second
+windows (`0`, `308`, `560`, `845`, `1104`, `2045`, `2513`, and `3671 s`). Each
+demo channel retains five deterministic snippets and its aligned LFP window,
+block-averaged to 50 Hz (500 points per channel). The fixture totals 640 Spike
+templates and 64000 LFP points, plus source counts, rates, extraction
+parameters, and the source hash. This is a bounded demo mapping, not a claim
+that the source NWB has 128 independent electrodes.
 
 ## Unit interpretation
 
@@ -37,15 +40,18 @@ rather than silently pretending the stale NWB attributes are authoritative.
 
 ## Reconstruction
 
-`NwbDerivedDemoModel` loops the real 10-second event schedule on a 30 kHz sample
-timeline. Each event injects one of the real, channel-specific 32-point snippets.
-The real LFP window is linearly interpolated onto that 30 kHz timeline and
-looped at the same 10-second boundary as the event schedule. Only the
+`NwbDerivedDemoModel` loops each channel's assigned real 10-second event schedule
+on a 30 kHz sample timeline. Each event injects one of the real, channel-specific
+32-point snippets. The corresponding real LFP window is linearly interpolated
+onto that 30 kHz timeline and looped at the same 10-second boundary. Only the
 between-event broadband noise is synthetic. Wideband, LFP, Spike raster,
 all-channel waveform cards, and selected-channel waveforms are generated from
 this one reconstructed timeline.
 
-The browser composition root uses this 16-channel model. The Tauri software
+The browser composition root uses this bounded 128-channel-per-Pod model. The
+Spike matrix virtualizes its cards and Wideband/LFP render only the selected
+8-channel bank, so the additional demo channels do not create 128 live plots at
+once. The Tauri software
 adapter and protected replay keep the canonical
 `forge.synthetic.neural.integer.v1` model unchanged.
 

@@ -6,7 +6,7 @@ import process from "node:process";
 
 const root = path.resolve(import.meta.dirname, "..");
 const extractor = path.join(root, "scripts", "extract-nwb-demo-fixture.py");
-const output = path.join(root, "src", "fixtures", "nwb-waveform-demo.v2.json");
+const output = path.join(root, "src", "fixtures", "nwb-waveform-demo.v3.json");
 const source = process.argv[2] ?? "N:\\FINAL\\D10\\27-40-30-32_mouse40.nwb";
 const host = process.argv[3] ?? "sw-bastion";
 
@@ -23,7 +23,11 @@ const exitCode = await new Promise((resolve, reject) => {
 if (exitCode !== 0) throw new Error(`remote extractor exited with ${exitCode}`);
 
 const fixture = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-if (fixture.schemaVersion !== 2 || fixture.channels?.length !== fixture.source?.channelCount) {
+if (fixture.schemaVersion !== 3
+    || fixture.channels?.length !== 128
+    || fixture.source?.channelCount !== 16
+    || fixture.source?.sourceChannelCount !== 16
+    || fixture.source?.demoChannelCount !== 128) {
   throw new Error("remote extractor returned an invalid fixture");
 }
 await fs.mkdir(path.dirname(output), { recursive: true });

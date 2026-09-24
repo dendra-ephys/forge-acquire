@@ -7,7 +7,7 @@ This first implementation is intentionally narrow:
 - one main screen for devices, live traces, the selected channel, recording controls, and health metrics;
 - explicit `Disconnected -> Ready -> Monitoring -> Recording` operator states;
 - a deterministic simulator for exercising the complete UI state machine;
-- a [16-channel NWB-derived browser waveform demo](docs/NWB_DERIVED_DEMO.md)
+- a [128-channel NWB-derived browser waveform demo](docs/NWB_DERIVED_DEMO.md)
   whose real event snippets are reconstructed into a bounded mock Preview while
   remaining explicitly separate from the qualification simulator and hardware;
 - a fail-closed FT601/D3XX host-adapter foundation with protected internal admission and USB-descriptor gates, an explicit SCM bootstrap binding, and an honest unavailable Aggregator/10GbE placeholder;

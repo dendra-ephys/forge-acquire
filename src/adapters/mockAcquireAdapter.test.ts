@@ -964,7 +964,7 @@ describe("MockAcquireAdapter", () => {
     }
   });
 
-  it("authors an explicitly NWB-derived 16-channel browser demo without changing canonical defaults", async () => {
+  it("authors an explicitly NWB-derived 128-channel browser demo without changing canonical defaults", async () => {
     const model = new NwbDerivedDemoModel();
     const derived = new MockAcquireAdapter({
       connectedPodCount: 1,
@@ -979,7 +979,7 @@ describe("MockAcquireAdapter", () => {
       const connected = await derived.readSnapshot();
       const input = connected.topology.directPods[0]?.neuralInput;
       expect(input).toMatchObject({
-        neuralChannelCount: 16,
+        neuralChannelCount: 128,
         sampleRateHz: 30_000,
         sourceEncoding: "nwb_waveform_reconstruction",
         previewValueUnit: "microvolt",
@@ -1003,7 +1003,7 @@ describe("MockAcquireAdapter", () => {
       const frame = derived.previewSource.getLatest();
       if (frame?.encoding !== "spike_preview_v3") throw new Error("expected NWB spike preview");
       expect(frame).toMatchObject({
-        inputChannelCount: 16,
+        inputChannelCount: 128,
         valueUnitReasonCode: "NWB_WAVEFORM_RECONSTRUCTION_UNITS",
         waveformSampleRateHz: 30_000,
         processing: {
@@ -1011,7 +1011,7 @@ describe("MockAcquireAdapter", () => {
           configHash: model.scenarioHash,
         },
       });
-      expect(frame.channelActivity).toHaveLength(16);
+      expect(frame.channelActivity).toHaveLength(128);
       expect(frame.selectedChannelWaveforms.events.every((event) => event.values.length === 32)).toBe(true);
     } finally {
       derived.dispose();

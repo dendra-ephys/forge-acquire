@@ -72,10 +72,25 @@ export function virtualChannelWindow(
   const safeColumns = Math.max(1, Math.floor(columns));
   const totalRows = Math.ceil(Math.max(0, totalChannels) / safeColumns);
   const firstVisibleRow = Math.floor(Math.max(0, scrollTop) / OVERVIEW_GRID_ROW_HEIGHT);
-  const startRow = Math.max(0, firstVisibleRow - OVERVIEW_OVERSCAN_ROWS);
-  const requestedRows = Math.ceil(
-    Math.max(OVERVIEW_GRID_ROW_HEIGHT, viewportHeight) / OVERVIEW_GRID_ROW_HEIGHT,
-  ) + OVERVIEW_OVERSCAN_ROWS * 2;
+  const lastVisibleRowExclusive = Math.min(totalRows, Math.ceil(
+    (Math.max(0, scrollTop) + Math.max(OVERVIEW_GRID_ROW_HEIGHT, viewportHeight))
+      / OVERVIEW_GRID_ROW_HEIGHT,
+  ));
+  const visibleRows = Math.max(1, lastVisibleRowExclusive - firstVisibleRow);
+  const capacityRows = Math.max(1, Math.floor(MAX_OVERVIEW_DOM_CHANNELS / safeColumns));
+  const requestedRows = Math.min(
+    capacityRows,
+    visibleRows + OVERVIEW_OVERSCAN_ROWS * 2,
+  );
+  // When the viewport reaches the bottom, bias the bounded window downward so
+  // the final Pod channel is present. A simple upper slice can otherwise spend
+  // the 48-card budget on overscan above the viewport and omit the last rows.
+  const minimumStartForViewport = Math.max(0, lastVisibleRowExclusive - requestedRows);
+  const maximumStart = Math.max(0, totalRows - requestedRows);
+  const startRow = Math.min(
+    maximumStart,
+    Math.max(minimumStartForViewport, firstVisibleRow - OVERVIEW_OVERSCAN_ROWS),
+  );
   const availableRows = Math.max(0, totalRows - startRow);
   const renderedRows = Math.min(availableRows, requestedRows);
   const start = startRow * safeColumns;

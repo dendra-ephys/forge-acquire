@@ -7,31 +7,36 @@ describe("NwbDerivedDemoModel", () => {
       sha256: "d9bb7a521a107d6f408186e28c2c2ebd5826b6cee2eb971d79c89ee643769343",
       byteLength: 147_311_211,
       channelCount: 16,
+      sourceChannelCount: 16,
+      demoChannelCount: 128,
       waveformPointCount: 32,
       interpretedUnit: "millivolt",
       lfpPath: "acquisition/LFP/data",
       lfpSourceRateHz: 1_000,
       lfpInterpretedUnit: "millivolt",
     });
-    expect(NWB_DEMO_FIXTURE.schemaVersion).toBe(2);
-    expect(NWB_DEMO_FIXTURE.channels).toHaveLength(16);
-    expect(NWB_DEMO_FIXTURE.channels.flatMap((channel) => channel.waveformCounts)).toHaveLength(80);
+    expect(NWB_DEMO_FIXTURE.schemaVersion).toBe(3);
+    expect(NWB_DEMO_FIXTURE.channels).toHaveLength(128);
+    expect(NWB_DEMO_FIXTURE.channels.flatMap((channel) => channel.waveformCounts)).toHaveLength(640);
     expect(NWB_DEMO_FIXTURE.channels.every((channel) => channel.lfpCounts.length === 500)).toBe(true);
     expect(NWB_DEMO_FIXTURE.channels.reduce(
       (sum, channel) => sum + channel.eventSamples.length,
       0,
-    )).toBe(1_081);
+    )).toBeGreaterThan(1_081);
+    expect(new Set(NWB_DEMO_FIXTURE.channels.map(
+      (channel) => channel.sourceWindowStartSeconds,
+    )).size).toBe(8);
   });
 
   it("replays the compact real LFP window instead of a synthetic sine baseline", () => {
     const model = new NwbDerivedDemoModel();
     const samplesPerLfpPoint = BigInt(model.sampleRateHz / 50);
-    for (const channel of [0, 5, 10, 15]) {
+    for (const channel of [0, 37, 82, 127]) {
       const source = NWB_DEMO_FIXTURE.channels[channel]!.lfpCounts;
       expect(model.lfpAt(0n, channel)).toBe(source[0]! * 4);
       expect(model.lfpAt(samplesPerLfpPoint * 137n, channel)).toBe(source[137]! * 4);
     }
-    expect(new Set([0, 5, 10, 15].map((channel) => (
+    expect(new Set([0, 37, 82, 127].map((channel) => (
       NWB_DEMO_FIXTURE.channels[channel]!.lfpCounts.join(",")
     ))).size).toBe(4);
     expect(model.lfpAt(300_000n, 0)).toBe(model.lfpAt(0n, 0));
@@ -71,10 +76,10 @@ describe("NwbDerivedDemoModel", () => {
     expect(waveforms.some((values) => values.indexOf(Math.min(...values)) !== 16)).toBe(true);
   });
 
-  it("rejects channel-count claims that exceed the 16-channel source", () => {
+  it("exposes exactly 128 bounded demo channels while preserving the 16-channel source receipt", () => {
     const model = new NwbDerivedDemoModel();
-    expect(() => model.inputConfigurationHash(32, "NWB-DERIVED-LINEAR-32"))
-      .toThrow(/requires exactly 16 channels/);
-    expect(model.inputConfigurationHash(16, "NWB-DERIVED-LINEAR-16")).toMatch(/^[0-9a-f]{64}$/);
+    expect(() => model.inputConfigurationHash(16, "NWB-DERIVED-LINEAR-16"))
+      .toThrow(/requires exactly 128 channels/);
+    expect(model.inputConfigurationHash(128, "NWB-DERIVED-LINEAR-128")).toMatch(/^[0-9a-f]{64}$/);
   });
 });
