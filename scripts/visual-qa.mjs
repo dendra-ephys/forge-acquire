@@ -639,6 +639,7 @@ try {
   }
   await lfpTab.click();
   await page.getByRole("application", { name: /Live LFP bank traces/ }).waitFor();
+  await screenshot("02b-real-nwb-lfp-preview.png");
   await spikesTab.click();
   const spikeSummary = page.locator('[data-testid="spike-event-summary"]');
   const channelOverview = page.getByRole("listbox", { name: /Live Spike overview for all/ });

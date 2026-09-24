@@ -18,12 +18,15 @@ import h5py
 import numpy as np
 
 
-SCHEMA_VERSION = 1
-FIXTURE_ID = "forge.demo.nwb-waveform-reconstruction.v1"
+SCHEMA_VERSION = 2
+FIXTURE_ID = "forge.demo.nwb-waveform-reconstruction.v2"
 SAMPLE_RATE_HZ = 30_000
 LOOP_SECONDS = 10
 MICROVOLTS_PER_COUNT = 0.125
-TEMPLATES_PER_CHANNEL = 3
+TEMPLATES_PER_CHANNEL = 5
+LFP_PATH = "acquisition/LFP/data"
+LFP_OUTPUT_RATE_HZ = 50
+LFP_MICROVOLTS_PER_COUNT = 0.5
 
 
 def source_sha256(path: str) -> str:
@@ -78,6 +81,30 @@ def emit_fixture(path: str) -> dict[str, Any]:
         spike_times = [spike_times_all[start:end] for start, end in slices]
         duration_seconds = max(float(times[-1]) for times in spike_times if times.size)
         window_start = choose_window(spike_times, duration_seconds)
+        lfp = nwb[LFP_PATH]
+        lfp_group = lfp.parent
+        lfp_rate_hz = int(lfp_group.attrs["rate"])
+        lfp_starting_time = float(lfp_group.attrs.get("starting_time", 0.0))
+        if lfp.ndim != 2 or lfp.shape[1] != len(slices):
+            raise ValueError("LFP channel count does not match spike-waveform units")
+        if lfp_rate_hz % LFP_OUTPUT_RATE_HZ != 0:
+            raise ValueError("LFP source rate is not an integer multiple of the fixture rate")
+        lfp_start = int(round((window_start - lfp_starting_time) * lfp_rate_hz))
+        lfp_stop = lfp_start + LOOP_SECONDS * lfp_rate_hz
+        if lfp_start < 0 or lfp_stop > lfp.shape[0]:
+            raise ValueError("selected spike window is outside the LFP source extent")
+        lfp_source = np.asarray(lfp[lfp_start:lfp_stop], dtype=np.float64)
+        lfp_decimation = lfp_rate_hz // LFP_OUTPUT_RATE_HZ
+        lfp_microvolts = lfp_source.reshape(
+            LOOP_SECONDS * LFP_OUTPUT_RATE_HZ,
+            lfp_decimation,
+            lfp.shape[1],
+        ).mean(axis=1) * 1_000.0
+        lfp_microvolts -= np.median(lfp_microvolts, axis=0, keepdims=True)
+        lfp_counts = np.rint(lfp_microvolts / LFP_MICROVOLTS_PER_COUNT).clip(
+            -32_768,
+            32_767,
+        ).astype(np.int16)
         channels = []
         peak_indices: list[int] = []
         for channel, ((start, end), times) in enumerate(zip(slices, spike_times)):
@@ -103,6 +130,7 @@ def emit_fixture(path: str) -> dict[str, Any]:
                 "recordingRateHz": round(float(len(times) / duration_seconds), 4),
                 "eventSamples": event_samples.tolist(),
                 "waveformCounts": waveform_counts.astype(int).tolist(),
+                "lfpCounts": lfp_counts[:, channel].astype(int).tolist(),
             })
         waveform_point_count = int(nwb["processing/spike_waveforms/unit_0"].shape[1])
         pretrigger = int(np.median(peak_indices))
@@ -127,6 +155,11 @@ def emit_fixture(path: str) -> dict[str, Any]:
                     "Legacy PLX conversion output stores physical millivolts while this file retains "
                     "unit=raw and conversion=1; extraction converts those stored values to microvolts."
                 ),
+                "lfpPath": LFP_PATH,
+                "lfpStoredUnit": str(lfp.attrs.get("unit", "unknown")),
+                "lfpStoredConversion": float(lfp.attrs.get("conversion", 1.0)),
+                "lfpInterpretedUnit": "millivolt",
+                "lfpSourceRateHz": lfp_rate_hz,
             },
             "reconstruction": {
                 "sampleRateHz": SAMPLE_RATE_HZ,
@@ -135,8 +168,14 @@ def emit_fixture(path: str) -> dict[str, Any]:
                 "microvoltsPerCount": MICROVOLTS_PER_COUNT,
                 "waveformPretriggerSamples": pretrigger,
                 "waveformSelection": (
-                    "Three deterministic event-aligned snippets per channel, baseline corrected using "
+                    "Five deterministic event-aligned snippets per channel, baseline corrected using "
                     "the first four points and excluding the outer 2 percent peak-to-peak amplitudes."
+                ),
+                "lfpSampleRateHz": LFP_OUTPUT_RATE_HZ,
+                "lfpMicrovoltsPerCount": LFP_MICROVOLTS_PER_COUNT,
+                "lfpSelection": (
+                    "The source-aligned 10-second LFP window is block-averaged from 1000 Hz to 50 Hz, "
+                    "median centered per channel, converted from millivolts to microvolts, and quantized."
                 ),
             },
             "channels": channels,

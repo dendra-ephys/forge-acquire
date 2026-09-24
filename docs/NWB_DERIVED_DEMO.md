@@ -1,8 +1,8 @@
 # NWB-derived browser demo
 
-Status: browser-only mock Preview data. The event times and waveform snippets
-come from a real NWB artifact; the continuous trace between events is a
-deterministic reconstruction and is not a copied raw recording.
+Status: browser-only mock Preview data. The event times, waveform snippets, and
+compact LFP window come from a real NWB artifact; the wideband trace between
+events is a deterministic reconstruction and is not a copied raw recording.
 
 ## Source receipt
 
@@ -14,11 +14,14 @@ deterministic reconstruction and is not a copied raw recording.
 | Source duration | `3681.862833 s` |
 | Source channels | `16` |
 | Waveform rows | one 32-point row per `units/spike_times` event |
+| LFP source | `acquisition/LFP/data`, 16 channels at 1000 Hz |
 
 The compact checked-in fixture is
-`src/fixtures/nwb-waveform-demo.v1.json`. It contains no continuous source
-recording. It retains a representative 10-second event-time window beginning at
-source time `507 s`, three deterministic snippets per channel, source counts and
+`src/fixtures/nwb-waveform-demo.v2.json`. It contains no broadband continuous
+source recording. It retains a representative 10-second event-time window
+beginning at source time `507 s`, five deterministic snippets per channel, and
+the aligned LFP window block-averaged to 50 Hz (500 points per channel). The
+fixture totals 80 Spike templates and 8000 LFP points, plus source counts,
 rates, extraction parameters, and the source hash.
 
 ## Unit interpretation
@@ -26,20 +29,21 @@ rates, extraction parameters, and the source hash.
 This legacy file reports `unit=raw, conversion=1`. The owning conversion tools
 state that PLX spike waveforms have already been converted to physical
 millivolts; the stored step size and amplitudes are consistent with that path.
-The extractor therefore baseline-corrects each snippet and converts
-`mV -> µV`. The fixture quantizes at `0.125 µV/count`. The correction is recorded
-in the fixture rather than silently pretending the stale NWB attribute is
-authoritative.
+The extractor therefore baseline-corrects each Spike snippet and converts
+`mV -> µV`. Spike snippets quantize at `0.125 µV/count`. The LFP window follows
+the same documented interpretation, is median-centered per channel, and
+quantizes at `0.5 µV/count`. These corrections are recorded in the fixture
+rather than silently pretending the stale NWB attributes are authoritative.
 
 ## Reconstruction
 
 `NwbDerivedDemoModel` loops the real 10-second event schedule on a 30 kHz sample
 timeline. Each event injects one of the real, channel-specific 32-point snippets.
-Only the between-event low-frequency baseline and low-amplitude noise are
-synthetic. Wideband, Spike raster, all-channel waveform cards, and selected
-channel waveforms are generated from this one reconstructed timeline. The LFP
-view is the paired synthetic low-frequency baseline; it is not source LFP from
-the NWB.
+The real LFP window is linearly interpolated onto that 30 kHz timeline and
+looped at the same 10-second boundary as the event schedule. Only the
+between-event broadband noise is synthetic. Wideband, LFP, Spike raster,
+all-channel waveform cards, and selected-channel waveforms are generated from
+this one reconstructed timeline.
 
 The browser composition root uses this 16-channel model. The Tauri software
 adapter and protected replay keep the canonical
@@ -64,8 +68,8 @@ Any refreshed fixture must update the pinned source hash test and pass `npm test
 
 - `scope=mock`, `synthetic=true`, and `containsContinuousRawSamples=false` remain
   mandatory on every Preview frame.
-- The UI label `NWB µV` means real NWB snippets with corrected physical units; it
-  does not mean live hardware, a raw-data replay, or a scientifically validated
-  detector/sorter.
+- The UI label `NWB µV` means real NWB Spike snippets and real downsampled LFP
+  with corrected physical units; it does not mean live hardware, a broadband
+  raw-data replay, or a scientifically validated detector/sorter.
 - This fixture cannot qualify Intan, CABLINE, Receiver Pod, FT601/D3XX, daemon,
   journal, NWB publication, storage throughput, or release readiness.

@@ -14,7 +14,9 @@ const startupBudgets = new Map([
 // Keep the acquisition console's startup budget unchanged, and separately cap
 // the complete offline payload so lazy loading cannot hide unbounded growth.
 const totalBudgets = new Map([
-  [".js", 112 * 1024],
+  // The on-demand NWB Preview fixture includes 80 real Spike snippets and
+  // 8000 compact LFP points. Keep it out of startup and cap its total cost.
+  [".js", 128 * 1024],
   [".css", 18 * 1024],
 ]);
 const totals = new Map([...totalBudgets.keys()].map((extension) => [extension, 0]));

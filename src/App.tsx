@@ -44,6 +44,7 @@ import type { PreflightCheck, RecordingSetupMode } from "./components/PreflightD
 import { RunControlPanel } from "./components/RunControlPanel";
 import { RunIntegrityRail } from "./components/RunIntegrityRail";
 import { SignalViewTabs, type SignalViewOption } from "./components/SignalViewTabs";
+import type { PreviewNeuralModel } from "./core/previewNeuralModel";
 import { deriveRunOutput } from "./core/runOutputState";
 
 const LOW_STORAGE_THRESHOLD_BYTES = 20_000_000_000;
@@ -149,8 +150,8 @@ function topologyPods(topology: PodTopologySnapshot): PodSnapshot[] {
   ];
 }
 
-function App() {
-  const runtime = useMemo(() => createAcquireRuntime(), []);
+function AcquireApp({ previewModel }: { previewModel: PreviewNeuralModel }) {
+  const runtime = useMemo(() => createAcquireRuntime(previewModel), [previewModel]);
   const runDirectoryBrowserRef = useRef<Promise<RunDirectoryBrowser> | null>(null);
   const adapter = runtime.adapter;
   const mountedRef = useRef(false);
@@ -1127,6 +1128,31 @@ function App() {
       />
     </div>
   );
+}
+
+function App() {
+  const [previewModel, setPreviewModel] = useState<PreviewNeuralModel | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void import("./core/nwbDerivedDemo").then(({ NwbDerivedDemoModel }) => {
+      if (active) setPreviewModel(new NwbDerivedDemoModel());
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (previewModel === null) {
+    return (
+      <div className="app-loading" role="status">
+        <Waves size={24} aria-hidden="true" />
+        <strong>Forge Acquire</strong>
+        <span>Loading compact NWB Preview data…</span>
+      </div>
+    );
+  }
+  return <AcquireApp previewModel={previewModel} />;
 }
 
 export default App;

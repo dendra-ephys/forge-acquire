@@ -1,4 +1,4 @@
-import fixtureJson from "../fixtures/nwb-waveform-demo.v1.json";
+import fixtureJson from "../fixtures/nwb-waveform-demo.v2.json";
 import type { PreviewNeuralModel, PreviewNeuralSample } from "./previewNeuralModel";
 import { neuralEvidenceHash } from "./syntheticNeural";
 
@@ -8,6 +8,7 @@ interface NwbDemoChannel {
   recordingRateHz: number;
   eventSamples: number[];
   waveformCounts: number[][];
+  lfpCounts: number[];
 }
 
 interface NwbDemoFixture {
@@ -24,6 +25,11 @@ interface NwbDemoFixture {
     storedConversion: number;
     interpretedUnit: string;
     unitInterpretation: string;
+    lfpPath: string;
+    lfpStoredUnit: string;
+    lfpStoredConversion: number;
+    lfpInterpretedUnit: string;
+    lfpSourceRateHz: number;
   };
   reconstruction: {
     sampleRateHz: number;
@@ -32,6 +38,9 @@ interface NwbDemoFixture {
     microvoltsPerCount: number;
     waveformPretriggerSamples: number;
     waveformSelection: string;
+    lfpSampleRateHz: number;
+    lfpMicrovoltsPerCount: number;
+    lfpSelection: string;
   };
   channels: NwbDemoChannel[];
 }
@@ -85,6 +94,9 @@ export class NwbDerivedDemoModel implements PreviewNeuralModel {
     `source_window=${fixture.reconstruction.sourceWindowStartSeconds}`,
     `loop_seconds=${fixture.reconstruction.loopSeconds}`,
     `microvolts_per_count=${fixture.reconstruction.microvoltsPerCount}`,
+    `lfp_path=${fixture.source.lfpPath}`,
+    `lfp_rate=${fixture.reconstruction.lfpSampleRateHz}`,
+    `lfp_microvolts_per_count=${fixture.reconstruction.lfpMicrovoltsPerCount}`,
   ].join(";"));
   readonly sampleRateHz = fixture.reconstruction.sampleRateHz;
   readonly previewMicrovoltsPerCount = fixture.reconstruction.microvoltsPerCount;
@@ -111,12 +123,18 @@ export class NwbDerivedDemoModel implements PreviewNeuralModel {
 
   lfpAt(sample: bigint, channel: number): number {
     assertSample(sample);
-    assertChannel(channel);
-    const seconds = Number(sample % this.loopSamples) / this.sampleRateHz;
-    const phase = channel * 0.37;
+    const source = assertChannel(channel);
+    const position = Number(sample % this.loopSamples)
+      * fixture.reconstruction.lfpSampleRateHz / this.sampleRateHz;
+    const left = Math.floor(position) % source.lfpCounts.length;
+    const right = (left + 1) % source.lfpCounts.length;
+    const fraction = position - Math.floor(position);
+    const interpolated = (source.lfpCounts[left] ?? 0) * (1 - fraction)
+      + (source.lfpCounts[right] ?? 0) * fraction;
     return Math.round(
-      88 * Math.sin(2 * Math.PI * 7 * seconds + phase)
-      + 31 * Math.sin(2 * Math.PI * 13 * seconds + phase * 0.43),
+      interpolated
+      * fixture.reconstruction.lfpMicrovoltsPerCount
+      / this.previewMicrovoltsPerCount,
     );
   }
 

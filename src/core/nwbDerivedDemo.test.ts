@@ -9,13 +9,32 @@ describe("NwbDerivedDemoModel", () => {
       channelCount: 16,
       waveformPointCount: 32,
       interpretedUnit: "millivolt",
+      lfpPath: "acquisition/LFP/data",
+      lfpSourceRateHz: 1_000,
+      lfpInterpretedUnit: "millivolt",
     });
+    expect(NWB_DEMO_FIXTURE.schemaVersion).toBe(2);
     expect(NWB_DEMO_FIXTURE.channels).toHaveLength(16);
-    expect(NWB_DEMO_FIXTURE.channels.flatMap((channel) => channel.waveformCounts)).toHaveLength(48);
+    expect(NWB_DEMO_FIXTURE.channels.flatMap((channel) => channel.waveformCounts)).toHaveLength(80);
+    expect(NWB_DEMO_FIXTURE.channels.every((channel) => channel.lfpCounts.length === 500)).toBe(true);
     expect(NWB_DEMO_FIXTURE.channels.reduce(
       (sum, channel) => sum + channel.eventSamples.length,
       0,
     )).toBe(1_081);
+  });
+
+  it("replays the compact real LFP window instead of a synthetic sine baseline", () => {
+    const model = new NwbDerivedDemoModel();
+    const samplesPerLfpPoint = BigInt(model.sampleRateHz / 50);
+    for (const channel of [0, 5, 10, 15]) {
+      const source = NWB_DEMO_FIXTURE.channels[channel]!.lfpCounts;
+      expect(model.lfpAt(0n, channel)).toBe(source[0]! * 4);
+      expect(model.lfpAt(samplesPerLfpPoint * 137n, channel)).toBe(source[137]! * 4);
+    }
+    expect(new Set([0, 5, 10, 15].map((channel) => (
+      NWB_DEMO_FIXTURE.channels[channel]!.lfpCounts.join(",")
+    ))).size).toBe(4);
+    expect(model.lfpAt(300_000n, 0)).toBe(model.lfpAt(0n, 0));
   });
 
   it("replays real event timing and repeats only at the declared 10 second boundary", () => {

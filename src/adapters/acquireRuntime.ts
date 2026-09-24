@@ -1,7 +1,7 @@
 import type { AcquireAdapter, MockFaultControl } from "./acquireAdapter";
 import { MockAcquireAdapter } from "./mockAcquireAdapter";
 import { SoftwareAcquireAdapter } from "./softwareAcquireAdapter";
-import { NwbDerivedDemoModel } from "../core/nwbDerivedDemo";
+import type { PreviewNeuralModel } from "../core/previewNeuralModel";
 
 /**
  * Composition-root boundary for the control plane.
@@ -20,14 +20,14 @@ function runningInsideTauri(): boolean {
   return typeof globalThis === "object" && "__TAURI_INTERNALS__" in globalThis;
 }
 
-export function createAcquireRuntime(): AcquireRuntime {
+export function createAcquireRuntime(previewModel: PreviewNeuralModel): AcquireRuntime {
   if (runningInsideTauri()) {
     return {
       adapter: new SoftwareAcquireAdapter({
         connectedPodCount: 4,
         transitionDelayMs: 180,
         previewIntervalMs: 70,
-        previewModel: new NwbDerivedDemoModel(),
+        previewModel,
       }),
       // Recording now writes a real software journal. GUI fault injection is
       // deliberately unavailable on that path; browser-only visual QA keeps
@@ -39,7 +39,7 @@ export function createAcquireRuntime(): AcquireRuntime {
     connectedPodCount: 4,
     transitionDelayMs: 180,
     previewIntervalMs: 70,
-    previewModel: new NwbDerivedDemoModel(),
+    previewModel,
   });
   return {
     adapter,

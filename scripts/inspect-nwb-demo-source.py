@@ -68,12 +68,28 @@ def main() -> int:
                 key: describe(nwb["units"][key]) for key in sorted(nwb["units"].keys())
             }
         for candidate in (
+            "acquisition/LFP/data",
             "processing/ecephys/LFP/ElectricalSeries/data",
             "processing/lfp/LFP/data",
             "acquisition/ElectricalSeries/data",
         ):
             if candidate in nwb:
-                result["lfp"] = {"path": candidate, **describe(nwb[candidate])}
+                dataset = nwb[candidate]
+                stride = max(1, dataset.shape[0] // 50_000)
+                sampled = np.asarray(dataset[::stride], dtype=np.float64)
+                result["lfp"] = {
+                    "path": candidate,
+                    **describe(dataset),
+                    "parent_attrs": {
+                        key: json_value(value) for key, value in dataset.parent.attrs.items()
+                    },
+                    "sample_stride": stride,
+                    "sampled_quantiles": {
+                        str(percentile): float(np.percentile(sampled, percentile))
+                        for percentile in (0, 1, 50, 99, 100)
+                    },
+                    "channel_peak_to_peak": np.ptp(sampled, axis=0).astype(float).tolist(),
+                }
                 break
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
