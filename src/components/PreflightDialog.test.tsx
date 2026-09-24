@@ -36,7 +36,7 @@ const DIRECTORY_LISTING: RunDirectoryListing = {
 };
 
 describe("PreflightDialog", () => {
-  it("shows four operator conclusions and keeps mock receipts in collapsed technical details", () => {
+  it("keeps recording setup focused on editable inputs and actions", () => {
     const markup = renderToStaticMarkup(
       <PreflightDialog
         open
@@ -85,27 +85,18 @@ describe("PreflightDialog", () => {
       />,
     );
 
-    expect(markup.match(/data-preflight-conclusion=/g)).toHaveLength(4);
-    expect(markup).toContain('data-testid="preflight-operator-summary"');
-    expect(markup).toContain('data-preflight-conclusion="devices"');
-    expect(markup).toContain('data-preflight-conclusion="save-location" data-allocation-state="simulated"');
-    expect(markup).toContain('data-preflight-conclusion="final-output" data-state="available"');
-    expect(markup).toContain('data-preflight-conclusion="readiness" data-state="ready"');
+    expect(markup).not.toContain("data-preflight-conclusion");
+    expect(markup).not.toContain('data-testid="preflight-operator-summary"');
+    expect(markup).not.toContain("Technical details");
+    expect(markup).not.toContain("Adapter and evidence scope");
+    expect(markup).not.toContain("Ready to check recording conditions");
     expect(markup).toContain("Mock Direct Pod 1");
-    expect(markup).toContain("F:\\ForgeRuns\\FORGE-RUN-001");
-    expect(markup).toContain("Simulation name allocated · no file created");
+    expect(markup).toContain('id="recording-run-root"');
     expect(markup).toContain("Single-device recording");
-    expect(markup).toContain("directory=simulated");
-    expect(markup).toContain('<details class="preflight-technical-details">');
-    expect(markup).not.toContain('<details class="preflight-technical-details" open');
-    expect(markup).toContain("Write-interlock receipt");
     expect(markup).toContain("Arm recording");
-    expect(markup).toContain("Simulation only · no file");
-    expect(markup).not.toContain("Arm only");
-    expect(markup).not.toContain("Stimulation Arm");
   });
 
-  it("shows one NWB root cause while derived target and admission checks remain waiting", () => {
+  it("disables allocation when final output is unavailable without exposing internal checks", () => {
     const markup = renderToStaticMarkup(
       <PreflightDialog
         open
@@ -165,19 +156,13 @@ describe("PreflightDialog", () => {
       />,
     );
 
-    expect(markup.match(/data-preflight-conclusion=/g)).toHaveLength(4);
+    expect(markup).not.toContain("data-preflight-conclusion");
     expect(markup).toContain("Browse…");
     expect(markup).toContain("Browse local folders");
     expect(markup).not.toContain("system folder picker");
-    expect(markup).toContain('data-preflight-conclusion="final-output" data-state="unavailable"');
-    expect(markup).toContain('data-preflight-conclusion="readiness" data-state="blocked"');
-    expect(markup.match(/data-root-cause="nwb-output-unavailable"/g)).toHaveLength(1);
-    expect(markup).toContain("Unavailable");
-    expect(markup).toContain("Formal recording is unavailable");
-    expect(markup).toContain("NWB output module is not connected");
-    expect(markup.match(/preflight-check--pending/g)).toHaveLength(2);
-    expect(markup).not.toContain("BLOCKED");
-    expect(markup).toContain('<details class="preflight-technical-details">');
+    expect(markup).not.toContain("NWB output module is not connected");
+    expect(markup).not.toContain("Recording admission snapshot");
+    expect(markup).not.toContain("Technical details");
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[^<]*(?:<svg[\s\S]*?<\/svg>)?[^<]*Check &amp; allocate target/);
   });
 

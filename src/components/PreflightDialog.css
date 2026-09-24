@@ -1,10 +1,10 @@
 /* Loaded with Recording setup, outside the acquisition-console startup path. */
 .recording-setup-dialog{width:min(940px,100%)}
 .recording-setup-dialog .dialog-header{position:sticky;top:0;z-index:2}
-.recording-setup-dialog .dialog-actions{position:sticky;bottom:0;z-index:2;background:#fff}
+.recording-setup-dialog .dialog-actions{position:sticky;bottom:0;z-index:2;background:var(--forge-surface)}
 .recording-directory-control{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
 .recording-directory-control input{height:44px}
 .recording-directory-picker{min-width:136px;white-space:nowrap}
-.recording-field input:disabled{color:#6f7c82;background:#edf0f1}
+.recording-field input:disabled{color:var(--forge-ink-tertiary);background:var(--forge-surface-muted)}
 .recording-field input:focus-visible{border-color:var(--action);outline:2px solid rgba(23,108,143,.16);outline-offset:0}
 @media(max-width:720px){.recording-directory-control{grid-template-columns:1fr}}

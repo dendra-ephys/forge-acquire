@@ -1,16 +1,8 @@
 import {
-  AlertTriangle,
-  CheckCircle2,
-  ChevronDown,
-  Clock3,
-  CircleSlash2,
-  FolderLock,
   FolderOpen,
   LockKeyhole,
   Play,
   RefreshCw,
-  ShieldQuestion,
-  Wrench,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef } from "react";
 import type {
@@ -89,28 +81,6 @@ export interface PreflightDialogProps {
   onCancel: () => void;
 }
 
-function iconFor(status: PreflightCheckStatus) {
-  if (status === "pass") return <CheckCircle2 size={17} aria-hidden="true" />;
-  if (status === "pending") return <Clock3 size={17} aria-hidden="true" />;
-  if (status === "blocked") return <AlertTriangle size={17} aria-hidden="true" />;
-  if (status === "qualification_required") return <ShieldQuestion size={17} aria-hidden="true" />;
-  return <CircleSlash2 size={17} aria-hidden="true" />;
-}
-
-function labelFor(status: PreflightCheckStatus): string {
-  if (status === "pass") return "Passed";
-  if (status === "pending") return "Pending";
-  if (status === "blocked") return "Blocked";
-  if (status === "qualification_required") return "Qualification required";
-  return "Unavailable";
-}
-
-function targetAllocationLabel(target: RecordingTargetReservation): string {
-  return target.directoryCreateDisposition === "created_new"
-    ? "New directory created · no overwrite"
-    : "Simulation name allocated · no file created";
-}
-
 export function PreflightDialog({
   open,
   running,
@@ -119,15 +89,11 @@ export function PreflightDialog({
   recordingMode,
   adapterScope,
   finalOutputReady,
-  finalOutputLabel,
   runLabel,
   requestedDirectory,
   plannedDurationHours,
   devices,
   selectedPodKeys,
-  recordingTarget,
-  receiptId,
-  checks,
   directoryBrowserAvailable,
   directoryBrowserOpen,
   directoryBrowserListing,
@@ -160,81 +126,6 @@ export function PreflightDialog({
   const locked = running || passed || armed;
   const selectionProblem = recordingSelectionProblem(recordingMode, selectedPodKeys.size);
   const selectedDevices = devices.filter((device) => selectedPodKeys.has(device.key));
-  const plannedRunDirectory = requestedDirectory.trim().length > 0
-    ? `${requestedDirectory.replace(/[\\/]+$/, "")}\\${runLabel.trim() || "RUN"}-###`
-    : "No save location selected";
-  const selectedDeviceLabel = selectedDevices.length === 0
-    ? "None selected"
-    : selectedDevices.length === 1
-      ? selectedDevices[0].displayName
-      : `${selectedDevices.length} devices`;
-  const selectedDeviceDetail = selectedDevices.length === 0
-    ? recordingMode === "single" ? "Select one Preview device" : "Select 2–8 devices"
-    : selectedDevices.length === 1
-      ? selectedDevices[0].routeLabel
-      : selectedDevices.map((device) => device.displayName).join("、");
-  const setupProblem = runLabel.trim().length === 0
-    ? "Enter a Run name prefix."
-    : requestedDirectory.trim().length === 0
-      ? "Choose a save location."
-      : plannedDurationHours <= 0
-        ? "Planned duration must be greater than zero."
-        : selectionProblem;
-  const readiness = !finalOutputReady
-    ? {
-      state: "blocked",
-      rootCause: "nwb-output-unavailable",
-      shortLabel: "Unavailable",
-      summaryDetail: "See reason below",
-      title: "Formal recording is unavailable",
-      detail: "The NWB output module is not connected.",
-    }
-    : running
-      ? {
-        state: "working",
-        rootCause: undefined,
-        shortLabel: "Checking",
-        summaryDetail: "Please wait",
-        title: "Checking recording conditions",
-        detail: adapterScope === "mock" ? "Allocating a simulation name." : "Creating a new recording directory.",
-      }
-      : armed
-        ? {
-          state: "ready",
-          rootCause: undefined,
-          shortLabel: "Ready",
-          summaryDetail: "Devices and destination locked",
-          title: adapterScope === "mock" ? "Simulation ready" : "Ready to record",
-          detail: adapterScope === "mock" ? "Continue to validate the recording control flow." : "Devices and destination are locked.",
-        }
-        : passed
-          ? {
-            state: "ready",
-            rootCause: undefined,
-            shortLabel: "Ready to arm",
-            summaryDetail: "Lock this setup next",
-            title: adapterScope === "mock" ? "Simulation check passed" : "Recording checks passed",
-            detail: "Choose Arm recording to lock this setup.",
-          }
-          : setupProblem
-            ? {
-              state: "needs-setup",
-              rootCause: "recording-setup-incomplete",
-              shortLabel: "Incomplete",
-              summaryDetail: "Complete the setup above",
-              title: "Recording setup is incomplete",
-              detail: setupProblem,
-            }
-            : {
-              state: "pending",
-              rootCause: undefined,
-              shortLabel: "Ready to check",
-              summaryDetail: "Setup complete",
-              title: "Ready to check recording conditions",
-              detail: adapterScope === "mock"
-                ? "The check allocates a simulation name without creating a file."
-                : "A passed check creates a new directory and never overwrites an existing recording.",
-            };
   const canPreflight = !locked
     && runLabel.trim().length > 0
     && requestedDirectory.trim().length > 0
@@ -302,7 +193,6 @@ export function PreflightDialog({
           </Suspense>
         ) : <>
         <div className="dialog-body">
-          {!passed && !armed ? <>
           <div className="recording-setup-grid">
             <div className="recording-field recording-field--wide">
               <label htmlFor="recording-run-root">Save location · Run root</label>
@@ -388,116 +278,6 @@ export function PreflightDialog({
               ))}
             </div>
           </fieldset>
-          </> : null}
-
-          <section
-            className="preflight-operator-summary"
-            aria-label="Recording readiness summary"
-            data-testid="preflight-operator-summary"
-            data-readiness={readiness.state}
-          >
-            <div data-preflight-conclusion="devices" data-state={selectedDevices.length > 0 ? "selected" : "missing"}>
-              <span>Devices</span>
-              <strong title={selectedDevices.map((device) => device.displayName).join("、")}>{selectedDeviceLabel}</strong>
-              <small>{selectedDeviceDetail}</small>
-            </div>
-            <div
-              data-preflight-conclusion="save-location"
-              data-allocation-state={recordingTarget?.directoryCreateDisposition ?? "pending"}
-            >
-              <span>Save location</span>
-              <strong title={recordingTarget?.resolvedRunDirectory ?? plannedRunDirectory}>
-                {recordingTarget?.resolvedRunDirectory ?? "Not created"}
-              </strong>
-              <small>{recordingTarget
-                ? recordingTarget.directoryCreateDisposition === "created_new" ? "New directory created" : "Simulation name allocated"
-                : plannedRunDirectory}</small>
-            </div>
-            <div
-              data-preflight-conclusion="final-output"
-              data-state={finalOutputReady ? "available" : "unavailable"}
-            >
-              <span>Final output</span>
-              <strong>{finalOutputLabel}</strong>
-              <small>{adapterScope === "mock"
-                ? "Simulation creates no file"
-                : finalOutputReady ? "Generated and validated when recording ends" : "NWB output module required"}</small>
-            </div>
-            <div data-preflight-conclusion="readiness" data-state={readiness.state}>
-              <span>Current status</span>
-              <strong>{readiness.shortLabel}</strong>
-              <small>{readiness.summaryDetail}</small>
-            </div>
-          </section>
-
-          <div
-            className={`arm-boundary-callout${readiness.state === "ready" ? " is-ready" : ""}${readiness.state === "blocked" ? " is-blocked" : ""}`}
-            role={readiness.state === "blocked" || readiness.state === "needs-setup" ? "alert" : "status"}
-            data-root-cause={readiness.rootCause}
-          >
-            <LockKeyhole size={18} aria-hidden="true" />
-            <div>
-              <strong>{readiness.title}</strong>
-              <span>{readiness.detail}</span>
-            </div>
-          </div>
-
-          <details className="preflight-technical-details">
-            <summary>
-              <span>
-                <Wrench size={17} aria-hidden="true" />
-                <span>
-                  <strong>Technical details</strong>
-                  <small>Device identities, route receipts, and adapter evidence</small>
-                </span>
-              </span>
-              <ChevronDown className="preflight-technical-details__chevron" size={18} aria-hidden="true" />
-            </summary>
-            <div className="preflight-technical-details__body">
-              {recordingTarget ? (
-                <div className="recording-reservation">
-                  <FolderLock size={18} aria-hidden="true" />
-                  <div>
-                    <span>{targetAllocationLabel(recordingTarget)}</span>
-                    <strong title={recordingTarget.resolvedRunDirectory}>{recordingTarget.resolvedRunDirectory}</strong>
-                    <code>
-                      {recordingTarget.reservationId} · directory={recordingTarget.directoryCreateDisposition}
-                      {" · "}{recordingTarget.evidenceHash}
-                    </code>
-                  </div>
-                </div>
-              ) : (
-                <div className="recording-reservation is-pending">
-                  <FolderLock size={18} aria-hidden="true" />
-                  <div>
-                    <span>No directory reservation receipt</span>
-                    <strong>{plannedRunDirectory}</strong>
-                    <code>Final suffix and full path require an adapter reservation receipt</code>
-                  </div>
-                </div>
-              )}
-
-              <ul className="preflight-checks">
-                {checks.map((check) => (
-                  <li className={"preflight-check preflight-check--" + check.status} key={check.id}>
-                    <span className="preflight-check__icon">{iconFor(check.status)}</span>
-                    <div>
-                      <strong>{check.label}</strong>
-                      <p>{check.detail}</p>
-                      <code>{check.evidence}</code>
-                    </div>
-                    <span className="preflight-check__state">{labelFor(check.status)}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="preflight-technical-receipt">
-                <span>Write-interlock receipt</span>
-                <code>{receiptId ?? "No command receipt"}</code>
-                <small>Arm recording locks this setup; it does not start recording.</small>
-              </div>
-            </div>
-          </details>
         </div>
 
         <footer className="dialog-actions">

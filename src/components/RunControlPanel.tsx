@@ -52,6 +52,7 @@ export interface RunControlPanelProps {
   onRecover: () => void;
   onAcknowledgeFailed: () => void;
   runStatus: ReactNode;
+  setupPanel?: ReactNode;
 }
 
 function targetReadoutLabel(target: RecordingTargetReservation): string {
@@ -95,6 +96,7 @@ export function RunControlPanel({
   onRecover,
   onAcknowledgeFailed,
   runStatus,
+  setupPanel,
 }: RunControlPanelProps) {
   const phaseTone = recoveryRequired || runOutput.state === "failed"
     ? "fault"
@@ -254,6 +256,7 @@ export function RunControlPanel({
       <div className="run-control__device-status">
         {runStatus}
       </div>
+      {setupPanel}
     </section>
   );
 }

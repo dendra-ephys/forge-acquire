@@ -818,16 +818,32 @@ try {
   await requireMinimumTarget(multiSetupButton, "Multi-device Recording Setup", 32);
 
   await singleSetupButton.click();
-  const singleSetupDialog = page.getByRole("dialog", { name: "Single-device recording" });
-  await singleSetupDialog.waitFor();
-  await requireSlenderSurface(singleSetupDialog, "Recording setup dialog", 430, 1.8);
-  if ((await singleSetupDialog.locator('input[type="radio"]:checked').count()) !== 1) {
-    throw new Error("Single-device setup did not freeze exactly the current Preview Pod");
+  const singleSetupPanel = page.locator(".recording-setup-panel");
+  await singleSetupPanel.waitFor();
+  if ((await page.getByRole("dialog", { name: "Single-device recording" }).count()) !== 0
+      || !(await singleSetupPanel.evaluate((element) => element.parentElement?.classList.contains("run-control")))
+      || !(await singleSetupPanel.evaluate((element) => element === element.parentElement?.lastElementChild))) {
+    throw new Error("Single-device setup must be the last surface inside Acquisition, not a global dialog");
   }
-  if ((await singleSetupDialog.locator('input[type="checkbox"]').count()) !== 0) {
-    throw new Error("Single-device setup unexpectedly exposed a multi-device checkbox draft");
+  if ((await singleSetupPanel.getByText("Technical details", { exact: true }).count()) !== 0
+      || (await singleSetupPanel.getByText("Ready to check recording conditions", { exact: true }).count()) !== 0) {
+    throw new Error("Single-device setup still exposes internal engineering or redundant readiness copy");
   }
-  await singleSetupDialog.getByRole("button", { name: "Close recording setup", exact: true }).click();
+  const panelBackground = await singleSetupPanel.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const acquisitionBackground = await page.locator(".run-control").evaluate((element) => getComputedStyle(element).backgroundColor);
+  if (panelBackground !== acquisitionBackground) {
+    throw new Error(`Inline setup theme is inverted: panel ${panelBackground}, Acquisition ${acquisitionBackground}`);
+  }
+  await screenshot("04-inline-single-recording-setup.png");
+  await page.getByRole("button", { name: "Switch to dark theme", exact: true }).click();
+  const darkPanelBackground = await singleSetupPanel.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const darkAcquisitionBackground = await page.locator(".run-control").evaluate((element) => getComputedStyle(element).backgroundColor);
+  if (darkPanelBackground !== darkAcquisitionBackground) {
+    throw new Error(`Dark inline setup theme is inverted: panel ${darkPanelBackground}, Acquisition ${darkAcquisitionBackground}`);
+  }
+  await screenshot("04a-dark-inline-single-recording-setup.png");
+  await page.getByRole("button", { name: "Switch to light theme", exact: true }).click();
+  await singleSetupPanel.getByRole("button", { name: "Close recording setup", exact: true }).click();
 
   await multiSetupButton.click();
   const setupDialog = page.getByRole("dialog", { name: "Multi-device recording" });
@@ -856,45 +872,12 @@ try {
   if ((await setupDialog.locator('input[type="checkbox"]:checked').count()) !== 4) {
     throw new Error("Multi-device setup did not preserve four explicit operator selections");
   }
-  const operatorConclusions = setupDialog.locator("[data-preflight-conclusion]");
-  if ((await operatorConclusions.count()) !== 4) {
-    throw new Error("Recording setup must expose exactly four operator conclusions");
-  }
-  for (let index = 0; index < 4; index += 1) {
-    if (!(await operatorConclusions.nth(index).isVisible())) {
-      throw new Error(`Operator conclusion ${index + 1} is not visible`);
-    }
-    await requireSlenderSurface(operatorConclusions.nth(index), `Operator conclusion ${index + 1}`, 64, 2);
-  }
-  const technicalDetails = setupDialog.locator("details.preflight-technical-details");
-  const technicalSummary = technicalDetails.locator("summary");
-  await requireMinimumTarget(technicalSummary, "Preflight technical-details disclosure");
-  if (await technicalDetails.evaluate((element) => element.open)) {
-    throw new Error("Preflight technical details must be collapsed by default");
-  }
-  if (await setupDialog.locator(".preflight-check").first().isVisible()) {
-    throw new Error("Engineering checks are visible in the default operator view");
+  if ((await setupDialog.locator("[data-preflight-conclusion]").count()) !== 0
+      || (await setupDialog.locator("details.preflight-technical-details").count()) !== 0
+      || (await setupDialog.locator(".arm-boundary-callout").count()) !== 0) {
+    throw new Error("Multi-device setup still exposes redundant summaries, Ready callouts, or engineering evidence");
   }
   await setupDialog.getByRole("button", { name: "Check & allocate target" }).click();
-  const saveConclusion = setupDialog.locator('[data-preflight-conclusion="save-location"][data-allocation-state="simulated"]');
-  await saveConclusion.waitFor();
-  if (!(await saveConclusion.locator("strong").innerText()).includes("CORTEX-SESSION-001")) {
-    throw new Error("Operator save-location conclusion did not expose the allocated Run name");
-  }
-  await setupDialog.locator('[data-preflight-conclusion="readiness"][data-state="ready"]').waitFor();
-  if (await technicalDetails.evaluate((element) => element.open)) {
-    throw new Error("Preflight completion unexpectedly expanded technical details");
-  }
-  await technicalSummary.focus();
-  await page.keyboard.press("Enter");
-  if (!(await technicalDetails.evaluate((element) => element.open))) {
-    throw new Error("Technical details did not open from the keyboard");
-  }
-  await setupDialog.getByText("Simulation name allocated · no file created", { exact: true }).waitFor();
-  await page.keyboard.press("Enter");
-  if (await technicalDetails.evaluate((element) => element.open)) {
-    throw new Error("Technical details did not close from the keyboard");
-  }
   const armRecording = setupDialog.getByRole("button", { name: "Arm recording" });
   await armRecording.waitFor();
   await armRecording.focus();

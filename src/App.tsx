@@ -54,6 +54,11 @@ const PreflightDialog = lazy(async () => {
   return { default: module.PreflightDialog };
 });
 
+const RecordingSetupPanel = lazy(async () => {
+  const module = await import("./components/RecordingSetupPanel");
+  return { default: module.RecordingSetupPanel };
+});
+
 function formatByteCount(bytes: number | null): string {
   if (bytes === null || !Number.isFinite(bytes) || bytes < 0) return "—";
   if (bytes < 1_000) return `${Math.round(bytes)} B`;
@@ -1060,12 +1065,35 @@ function AcquireApp({ previewModel }: { previewModel: PreviewNeuralModel }) {
                 recordingPaused={snapshot.recordingPaused}
               />
             )}
+            setupPanel={preflightOpen && recordingSetupMode === "single" && !directoryBrowserOpen ? (
+              <Suspense fallback={null}><RecordingSetupPanel
+                running={preflightRunning}
+                passed={preflightPassed}
+                armed={recordingArmed}
+                adapterScope={snapshot.scope}
+                finalOutputReady={finalOutputReady}
+                runLabel={runLabel}
+                requestedDirectory={requestedDirectory}
+                plannedDurationHours={plannedDurationHours}
+                selectionValid={recordingSelectionValid}
+                directoryBrowserAvailable={"__TAURI_INTERNALS__" in globalThis}
+                onRunLabelChange={setRunLabel}
+                onRequestedDirectoryChange={handleRequestedDirectoryChange}
+                onOpenDirectoryBrowser={handleOpenDirectoryBrowser}
+                onPlannedDurationHoursChange={(value) => setPlannedDurationHours(
+                  Number.isFinite(value) ? Math.min(24, Math.max(0.1, value)) : 0.1,
+                )}
+                onRunPreflight={handleRunPreflight}
+                onRequestArm={() => void handleRequestArm()}
+                onClose={() => setPreflightOpen(false)}
+              /></Suspense>
+            ) : null}
             />
           )}
         </aside>
       </main>
 
-      {preflightOpen ? <Suspense fallback={null}>
+      {preflightOpen && (recordingSetupMode === "multi" || directoryBrowserOpen) ? <Suspense fallback={null}>
       <PreflightDialog
         open={preflightOpen}
         running={preflightRunning}

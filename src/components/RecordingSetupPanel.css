@@ -1,0 +1,145 @@
+.recording-setup-panel {
+  margin: 2px 7px 8px;
+  border: 1px solid var(--forge-border-strong);
+  border-radius: 10px;
+  color: var(--forge-ink);
+  background: var(--forge-surface-muted);
+  box-shadow: var(--forge-shadow);
+}
+
+.recording-setup-panel__header {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--forge-border);
+}
+
+.recording-setup-panel__header > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.recording-setup-panel__header span {
+  color: var(--forge-ink-tertiary);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.recording-setup-panel__header strong {
+  color: var(--forge-ink-strong);
+  font-size: 12px;
+}
+
+.recording-setup-panel__header button,
+.recording-setup-panel__browse {
+  border: 1px solid var(--forge-border);
+  color: var(--forge-ink-secondary);
+  background: var(--forge-surface-muted);
+}
+
+.recording-setup-panel__header button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.recording-setup-panel__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  gap: 8px;
+  padding: 9px;
+}
+
+.recording-setup-panel__field {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  color: var(--forge-ink-secondary);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.recording-setup-panel__field--path {
+  grid-column: 1 / -1;
+}
+
+.recording-setup-panel__field--path > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 5px;
+}
+
+.recording-setup-panel__field input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--forge-border-strong);
+  border-radius: 7px;
+  color: var(--forge-ink-strong);
+  background: var(--forge-surface-raised);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.recording-setup-panel__field input:disabled {
+  color: var(--forge-ink-tertiary);
+  background: var(--forge-surface-muted);
+}
+
+.recording-setup-panel__field input:focus-visible,
+.recording-setup-panel button:focus-visible {
+  outline: 2px solid var(--forge-ink-strong);
+  outline-offset: 2px;
+}
+
+.recording-setup-panel__browse {
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+}
+
+.recording-setup-panel__problem {
+  margin: 0 9px 7px;
+  color: var(--forge-ink-secondary);
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.recording-setup-panel__actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 9px;
+  border-top: 1px solid var(--forge-border);
+  background: var(--forge-surface-muted);
+}
+
+.recording-setup-panel__actions button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--forge-accent);
+  border-radius: 999px;
+  color: var(--forge-accent-contrast);
+  background: var(--forge-accent);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.recording-setup-panel button:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+}
